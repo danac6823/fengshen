@@ -505,7 +505,7 @@ function App() {
             view === "record" && React.createElement(Record, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, rules: rules, learn: learn, onManage: () => setCardModal(true), markActive: markActive, activity: activity, reminderTime: reminderTime, setReminderTime: setReminderTime }),
             view === "reconcile" && React.createElement(Reconcile, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, rules: rules, onManage: () => setCardModal(true) }),
             view === "analyze" && React.createElement(Analyze, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, learn: learn, budgets: budgets, setBudgets: setBudgets, fixedOverride: fixedOverride, setFixedOverride: setFixedOverride }),
-            view === "invest" && React.createElement(Wealth, { inv: inv, setInv: setInv, income: income, setIncome: setIncome, assets: assets, setAssets: setAssets, liabilities: liabilities, setLiabilities: setLiabilities, tx: tx, trips: trips, cash: cash, snaps: snaps, setSnaps: setSnaps, policies: policies, setPolicies: setPolicies }),
+            view === "invest" && React.createElement(Wealth, { inv: inv, setInv: setInv, income: income, setIncome: setIncome, assets: assets, setAssets: setAssets, liabilities: liabilities, setLiabilities: setLiabilities, tx: tx, trips: trips, cash: cash, snaps: snaps, setSnaps: setSnaps, policies: policies, setPolicies: setPolicies, cards: cards, setCards: setCards }),
             view === "stock" && React.createElement(Invest, { inv: inv, setInv: setInv, plans: plans, setPlans: setPlans, cash: cash, setCash: setCash }),
             view === "trip" && React.createElement(Trips, { trips: trips, setTrips: setTrips, cards: cards, upsertCardTx: upsertCardTx, removeCardTx: removeCardTx, postSplitPay: postSplitPay }),
             React.createElement("div", { className: "flex gap-2 justify-center mt-6 text-xs" },
@@ -520,7 +520,7 @@ function App() {
         React.createElement("nav", { className: "md:hidden fixed bottom-0 inset-x-0 flex", style: { background: C.card, borderTop: `1px solid ${C.border}`, paddingBottom: "env(safe-area-inset-bottom)" } }, NAV.map(([k, l]) => (React.createElement("button", { key: k, onClick: () => setView(k), style: { color: view === k ? C.act : C.muted }, className: "flex-1 py-3.5 text-[13px] font-semibold" },
             l,
             view === k && React.createElement("div", { className: "h-0.5 mt-1.5 mx-auto w-7 rounded", style: { background: C.act } }))))),
-        cardModal && React.createElement(CardsModal, { cards: cards, setCards: setCards, tx: tx, onClose: () => setCardModal(false) })));
+        cardModal && React.createElement(CardsModal, { cards: cards, setCards: setCards, tx: tx, assets: assets, onClose: () => setCardModal(false) })));
 }
 /* ---------- 繳款提醒 ---------- */
 function Reminders({ cards, tx, budgets = {}, activity = [], view, policies = [] }) {
@@ -1278,8 +1278,9 @@ function Analyze({ cards, cardById, tx, setTx, learn, budgets, setBudgets, fixed
                 React.createElement("button", { onClick: () => setTx((p) => p.filter((x) => x.id !== t.id)), style: { color: C.muted }, className: "text-xs shrink-0 px-1" }, "\u2715")))))))));
 }
 /* ================= 卡片管理 ================= */
-function CardsModal({ cards, setCards, tx, onClose }) {
+function CardsModal({ cards, setCards, tx, assets = [], onClose }) {
     const upd = (id, k, v) => setCards((p) => p.map((c) => (c.id === id ? { ...c, [k]: v } : c)));
+    const payAccts = (assets || []).filter((a) => ["銀行存款", "電子支付", "現金"].includes(a.type));
     const add = () => setCards((p) => [...p, { id: uid(), name: "新卡片", last4: "", color: CARD_PALETTE[p.length % CARD_PALETTE.length], bank: "", type: "信用卡", closingDay: "", dueDay: "" }]);
     const [confirmId, setConfirmId] = useState(null);
     const del = (id) => { if (cards.length <= 1)
@@ -1302,11 +1303,21 @@ function CardsModal({ cards, setCards, tx, onClose }) {
                     React.createElement("input", { value: c.bank, onChange: (e) => upd(c.id, "bank", e.target.value), placeholder: "\u9280\u884C", style: { background: C.paper, border: `1px solid ${C.border}` }, className: "flex-1 rounded-lg px-2 py-1.5 text-sm" }),
                     React.createElement("select", { value: c.type, onChange: (e) => upd(c.id, "type", e.target.value), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-2 py-1.5 text-sm" }, PAY_TYPES.map((t) => React.createElement("option", { key: t }, t))),
                     React.createElement("button", { onClick: () => del(c.id), style: { color: C.loss }, className: "text-xs ml-auto shrink-0" }, confirmId === c.id ? "再按一次確認" : "刪除")),
-                isRecon(c.type) && (React.createElement("div", { className: "flex gap-2 items-center" },
-                    React.createElement("label", { style: { color: C.muted }, className: "text-xs" }, "\u7D50\u5E33\u65E5"),
-                    React.createElement("input", { type: "number", min: "1", max: "31", value: c.closingDay, onChange: (e) => upd(c.id, "closingDay", e.target.value), placeholder: "\u2014", style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-14 rounded-lg px-2 py-1.5 text-sm" }),
-                    React.createElement("label", { style: { color: C.muted }, className: "text-xs ml-2" }, "\u7E73\u6B3E\u65E5"),
-                    React.createElement("input", { type: "number", min: "1", max: "31", value: c.dueDay, onChange: (e) => upd(c.id, "dueDay", e.target.value), placeholder: "\u2014", style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-14 rounded-lg px-2 py-1.5 text-sm" }))),
+                isRecon(c.type) && (React.createElement("div", { className: "space-y-2" },
+                    React.createElement("div", { className: "flex gap-2 items-center" },
+                        React.createElement("label", { style: { color: C.muted }, className: "text-xs" }, "\u7D50\u5E33\u65E5"),
+                        React.createElement("input", { type: "number", min: "1", max: "31", value: c.closingDay, onChange: (e) => upd(c.id, "closingDay", e.target.value), placeholder: "\u2014", style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-14 rounded-lg px-2 py-1.5 text-sm" }),
+                        React.createElement("label", { style: { color: C.muted }, className: "text-xs ml-2" }, "\u7E73\u6B3E\u65E5"),
+                        React.createElement("input", { type: "number", min: "1", max: "31", value: c.dueDay, onChange: (e) => upd(c.id, "dueDay", e.target.value), placeholder: "\u2014", style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-14 rounded-lg px-2 py-1.5 text-sm" })),
+                    c.type === "信用卡" && (React.createElement("div", { className: "flex gap-2 items-center" },
+                        React.createElement("label", { style: { color: C.muted }, className: "text-xs shrink-0" }, "\u6263\u6B3E\u5E33\u6236"),
+                        React.createElement("select", { value: c.payAcct || "", onChange: (e) => upd(c.id, "payAcct", e.target.value), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "flex-1 rounded-lg px-2 py-1.5 text-sm" },
+                            React.createElement("option", { value: "" }, "\u672A\u8A2D\u5B9A"),
+                            payAccts.map((a) => React.createElement("option", { key: a.id, value: a.id },
+                                a.name,
+                                "\uFF08",
+                                a.type,
+                                "\uFF09"))))))),
                 React.createElement("div", { className: "flex gap-1.5" }, CARD_PALETTE.map((col) => React.createElement("button", { key: col, onClick: () => upd(c.id, "color", col), style: { background: col, outline: c.color === col ? `2px solid ${C.ink}` : "none", outlineOffset: 2 }, className: "w-5 h-5 rounded-full" }))))))),
             React.createElement("button", { onClick: add, style: { border: `1px dashed ${C.border}`, color: C.muted }, className: "w-full rounded-xl py-2.5 text-sm mt-3" }, "\uFF0B \u65B0\u589E\u652F\u4ED8\u65B9\u5F0F"))));
 }
@@ -1367,12 +1378,51 @@ function holdingStats(h) {
     const price = +h.price || 0;
     return { shares, avgCost, invested: cost, value: shares * price, unreal: shares * (price - avgCost), realized, price };
 }
+function planSchedDates(plan, refStr, mb, mf) {
+    const days = plan.days || [];
+    if (!days.length)
+        return [];
+    const t = toDate(refStr);
+    const y = t.getFullYear(), m = t.getMonth();
+    const out = [];
+    for (let k = -mb; k <= mf; k++)
+        for (const day of days) {
+            const occ = new Date(y, m + k, day);
+            if (occ.getDate() === day)
+                out.push(occ);
+        }
+    return out.sort((a, b) => a - b);
+}
+function planLatest(plan, refStr) {
+    const t = toDate(refStr);
+    const sd = plan.start ? toDate(plan.start) : null;
+    const occ = planSchedDates(plan, refStr, 1, 0).filter((d) => d <= t && (!sd || d >= sd));
+    return occ.length ? dstr(occ[occ.length - 1]) : null;
+}
+function planNext(plan, refStr) {
+    const t = toDate(refStr);
+    const sd = plan.start ? toDate(plan.start) : null;
+    const occ = planSchedDates(plan, refStr, 0, 1).filter((d) => d >= t && (!sd || d >= sd));
+    return occ.length ? dstr(occ[0]) : null;
+}
 function planDue(plan) {
+    const today = todayStr();
+    if (plan.start && plan.start > today)
+        return false;
+    if (plan.freq === "weekly") {
+        if (!plan.lastDone)
+            return true;
+        return (toDate(today) - toDate(plan.lastDone)) / 86400000 >= 7;
+    }
+    if (plan.days && plan.days.length) {
+        const sched = planLatest(plan, today);
+        if (!sched)
+            return false;
+        return !plan.lastDone || toDate(plan.lastDone) < toDate(sched);
+    }
     if (!plan.lastDone)
         return true;
-    if (plan.freq === "weekly")
-        return (toDate(todayStr()) - toDate(plan.lastDone)) / 86400000 >= 7;
-    return monthOf(plan.lastDone) < monthOf(todayStr());
+    return monthOf(plan.lastDone) < monthOf(today);
 }
 // 交割帳戶可用資金（券商現金）：入金+股利+賣出 − 買進 − 出金
 function settlementCash(inv, cash) {
@@ -1450,7 +1500,7 @@ function xirr(flows) {
     }
     return isFinite(r) ? r : null;
 }
-function Wealth({ inv, setInv, income, setIncome, assets, setAssets, liabilities, setLiabilities, tx, trips, cash, snaps, setSnaps, policies, setPolicies }) {
+function Wealth({ inv, setInv, income, setIncome, assets, setAssets, liabilities, setLiabilities, tx, trips, cash, snaps, setSnaps, policies, setPolicies, cards, setCards }) {
     const [af, setAf] = useState({ name: "", type: "現金", value: "" });
     const [lf, setLf] = useState({ name: "", value: "" });
     const receivable = tx.reduce((a, t) => a + (t.biz && !t.reimbursed ? t.amount : 0), 0);
@@ -1506,6 +1556,13 @@ function Wealth({ inv, setInv, income, setIncome, assets, setAssets, liabilities
     const [editP, setEditP] = useState(null);
     const [polf, setPolf] = useState(BLANK_POL);
     const updateBal = (id, value, date) => { const v = +value || 0; setAssets((p) => p.map((a) => (a.id === id ? { ...a, value: v, hist: [...(a.hist || []), { date: date || todayStr(), value: v }].slice(-24) } : a))); };
+    const [payAmts, setPayAmts] = useState({});
+    const cardCycleAmt = (c) => { if (!c.closingDay)
+        return 0; const [st, e] = cycleWindow(+c.closingDay); return (tx || []).filter((t) => t.cardId === c.id && toDate(t.date) >= st && toDate(t.date) <= e).reduce((sum, t) => sum + t.amount, 0); };
+    const payCard = (c, amount) => { const acct = (assets || []).find((a) => a.id === c.payAcct); const v = +amount || 0; if (!acct || v <= 0)
+        return; updateBal(acct.id, (+acct.value || 0) - v, todayStr()); setCards((p) => p.map((x) => (x.id === c.id ? { ...x, paidMonth: cm, paidDate: todayStr(), paidAmt: v } : x))); setPayAmts((p) => { const n = { ...p }; delete n[c.id]; return n; }); };
+    const undoPay = (c) => { const acct = (assets || []).find((a) => a.id === c.payAcct); if (acct)
+        updateBal(acct.id, (+acct.value || 0) + (+c.paidAmt || 0), todayStr()); setCards((p) => p.map((x) => (x.id === c.id ? { ...x, paidMonth: "", paidDate: "", paidAmt: 0 } : x))); };
     const protectCov = useMemo(() => { const o = {}; for (const p of policies || [])
         if (PROTECT_TYPES.includes(p.ptype))
             o[p.ptype] = (o[p.ptype] || 0) + (+p.coverage || 0); return o; }, [policies]);
@@ -1672,6 +1729,36 @@ function Wealth({ inv, setInv, income, setIncome, assets, setAssets, liabilities
                 React.createElement("input", { placeholder: "\u8CA0\u50B5\u540D\u7A31\uFF08\u5982\u5361\u8CBB\u3001\u8CB8\u6B3E\uFF09", value: lf.name, onChange: (e) => setLf({ ...lf, name: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "col-span-8 rounded-lg px-2 py-2 text-sm" }),
                 React.createElement("input", { placeholder: "\u91D1\u984D", type: "number", value: lf.value, onChange: (e) => setLf({ ...lf, value: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "col-span-2 rounded-lg px-2 py-2 text-sm" }),
                 React.createElement("button", { onClick: addLiab, style: { background: C.loss, color: "#fff" }, className: "col-span-2 rounded-lg text-sm font-semibold" }, "\uFF0B"))),
+        (cards || []).some((c) => c.type === "信用卡" && c.payAcct) && (React.createElement("section", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-5" },
+            React.createElement("h3", { className: "text-sm font-bold mb-3" }, "\u4FE1\u7528\u5361\u7E73\u6B3E"),
+            React.createElement("div", { className: "space-y-3" }, (cards || []).filter((c) => c.type === "信用卡" && c.payAcct).map((c) => {
+                const acct = (assets || []).find((a) => a.id === c.payAcct);
+                const amt = cardCycleAmt(c);
+                const paid = c.paidMonth === cm;
+                const pv = payAmts[c.id] != null ? payAmts[c.id] : String(amt || "");
+                return (React.createElement("div", { key: c.id, style: { borderBottom: `1px solid ${C.border}` }, className: "pb-3" },
+                    React.createElement("div", { className: "flex items-center justify-between text-sm" },
+                        React.createElement("span", { className: "flex-1 truncate" },
+                            c.name,
+                            c.last4 ? ` ··${c.last4}` : "",
+                            " ",
+                            React.createElement("span", { style: { color: C.muted }, className: "text-xs" },
+                                "\u7531 ",
+                                acct ? acct.name : "（帳戶已移除）",
+                                " \u6263\u6B3E")),
+                        React.createElement("span", { style: { fontVariantNumeric: "tabular-nums", color: C.muted }, className: "text-xs shrink-0 ml-2" },
+                            "\u672C\u671F\u7D04 ",
+                            amt > 0 ? twd(amt) : "—")),
+                    paid ? (React.createElement("div", { className: "flex items-center gap-2 mt-1.5 text-xs", style: { color: C.self } },
+                        React.createElement("span", null,
+                            "\u2713 \u672C\u671F\u5DF2\u7E73",
+                            c.paidDate ? ` · ${c.paidDate.slice(5)}` : "",
+                            c.paidAmt ? ` · ${twd(c.paidAmt)}` : ""),
+                        React.createElement("button", { onClick: () => undoPay(c), style: { color: C.muted }, className: "underline ml-auto" }, "\u64A4\u92B7"))) : (React.createElement("div", { className: "flex items-center gap-2 mt-2" },
+                        React.createElement("input", { type: "number", value: pv, onChange: (e) => setPayAmts((p) => ({ ...p, [c.id]: e.target.value })), placeholder: "\u7E73\u6B3E\u91D1\u984D", style: { background: C.paper, border: `1px solid ${C.border}` }, className: "flex-1 rounded-lg px-3 py-1.5 text-sm" }),
+                        React.createElement("button", { onClick: () => payCard(c, pv), disabled: !acct || !(+pv > 0), style: { background: (acct && +pv > 0) ? C.act : C.border, color: "#fff" }, className: "rounded-lg px-3 py-1.5 text-sm font-semibold shrink-0" }, "\u6A19\u5DF2\u7E73\u6B3E")))));
+            })),
+            React.createElement("p", { style: { color: C.muted }, className: "text-[11px] mt-3 leading-relaxed" }, "\u6309\u300C\u6A19\u5DF2\u7E73\u6B3E\u300D\u6703\u628A\u91D1\u984D\u5F9E\u8A72\u5E33\u6236\u9918\u984D\u6263\u9664\u4E26\u8A18\u5165\u5E33\u6236\u7D00\u9304\uFF1B\u91D1\u984D\u9810\u8A2D\u70BA\u672C\u671F\u6D88\u8CBB\u7E3D\u984D\uFF0C\u53EF\u81EA\u884C\u4FEE\u6539\u3002\u64A4\u92B7\u6703\u52A0\u56DE\u3002"))),
         React.createElement("section", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-5" },
             React.createElement("div", { className: "flex items-center justify-between mb-3" },
                 React.createElement("h3", { className: "text-sm font-bold" }, "\u4FDD\u55AE"),
@@ -1744,7 +1831,7 @@ const TW_TICKERS = [
 const A_COLOR = { 股票: "#4FA98F", ETF: "#6FB59E", 債券: "#DB9270", 現金: "#A3BD9C", 加密: "#DD89A4", 其他: "#A99BCB" };
 function Invest({ inv, setInv, plans, setPlans, cash, setCash }) {
     const [tf, setTf] = useState({ name: "", type: "股票", date: todayStr(), kind: "買", shares: "", price: "", fee: "" });
-    const [pf, setPf] = useState({ name: "", type: "股票", amount: "", freq: "monthly" });
+    const [pf, setPf] = useState({ name: "", type: "股票", amount: "", freq: "monthly", start: todayStr(), days: [], dayInput: "" });
     const [exec, setExec] = useState(null);
     const [openH, setOpenH] = useState(null);
     const [cf, setCf] = useState({ kind: "入金", amount: "", date: todayStr(), note: "" });
@@ -1763,6 +1850,7 @@ function Invest({ inv, setInv, plans, setPlans, cash, setCash }) {
     } for (const h of inv)
         m[h.name] = h.type; return m; }, [inv]);
     const onName = (v) => setTf((t) => ({ ...t, name: v, type: tickerType[v] || t.type }));
+    const onPName = (v) => setPf((p) => ({ ...p, name: v, type: tickerType[v] || p.type }));
     const setPrice = (id, price) => setInv((p) => p.map((h) => (h.id === id ? { ...h, price: +price || 0 } : h)));
     const delHolding = (id) => setInv((p) => p.filter((h) => h.id !== id));
     const delTxn = (hid, tid) => setInv((p) => p.map((h) => (h.id === hid ? { ...h, txns: (h.txns || []).filter((t) => t.id !== tid) } : h)));
@@ -1770,7 +1858,7 @@ function Invest({ inv, setInv, plans, setPlans, cash, setCash }) {
         return; setCash((p) => [...(p || []), { id: uid(), kind: cf.kind, amount: +cf.amount, date: cf.date, note: cf.note.trim() }]); setCf({ ...cf, amount: "", note: "" }); };
     const delCash = (id) => setCash((p) => (p || []).filter((c) => c.id !== id));
     const addPlan = () => { if (!pf.name.trim() || !pf.amount)
-        return; setPlans((p) => [...(p || []), { id: uid(), name: pf.name.trim(), type: pf.type, amount: +pf.amount, freq: pf.freq, lastDone: "" }]); setPf({ name: "", type: "股票", amount: "", freq: "monthly" }); };
+        return; setPlans((p) => [...(p || []), { id: uid(), name: pf.name.trim(), type: pf.type, amount: +pf.amount, freq: pf.freq, start: pf.start || todayStr(), days: pf.freq === "monthly" ? [...pf.days].sort((a, b) => a - b) : [], lastDone: "" }]); setPf({ name: "", type: "股票", amount: "", freq: "monthly", start: todayStr(), days: [], dayInput: "" }); };
     const delPlan = (id) => setPlans((p) => p.filter((x) => x.id !== id));
     const runExec = () => { if (!exec || !exec.shares || !exec.price)
         return; addTxn(exec.plan.name, exec.plan.type, { id: uid(), date: todayStr(), kind: "買", shares: +exec.shares, price: +exec.price, fee: +exec.fee || 0, dca: true }); setPlans((p) => p.map((x) => (x.id === exec.plan.id ? { ...x, lastDone: todayStr() } : x))); setExec(null); };
@@ -1895,7 +1983,8 @@ function Invest({ inv, setInv, plans, setPlans, cash, setCash }) {
                         " \u00B7 \u6BCF\u671F ",
                         twd(pl.amount),
                         " \u00B7 ",
-                        pl.freq === "weekly" ? "每週" : "每月")),
+                        pl.freq === "weekly" ? "每週" : "每月",
+                        pl.days && pl.days.length ? ` · 應扣 ${(planLatest(pl, todayStr()) || "").slice(5)}` : "")),
                 React.createElement("button", { onClick: () => setExec({ plan: pl, shares: "", price: "", fee: "" }), style: { background: C.self, color: "#fff" }, className: "text-xs rounded px-3 py-1 shrink-0" }, "\u8F38\u5165\u672C\u671F"))))))),
         tot.value > 0 && (React.createElement("section", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-5" },
             React.createElement("h3", { className: "text-sm font-bold mb-3" }, "\u8CC7\u7522\u914D\u7F6E"),
@@ -1963,14 +2052,31 @@ function Invest({ inv, setInv, plans, setPlans, cash, setCash }) {
                         twd(pl.amount),
                         "/",
                         pl.freq === "weekly" ? "週" : "月",
+                        pl.days && pl.days.length ? ` · ${pl.days.join("/")}號` : "",
                         pl.lastDone ? ` · 上次 ${pl.lastDone.slice(5)}` : "")),
                 React.createElement("button", { onClick: () => setExec({ plan: pl, shares: "", price: "", fee: "" }), style: { color: C.self }, className: "text-xs underline shrink-0" }, "\u57F7\u884C"),
                 React.createElement("button", { onClick: () => delPlan(pl.id), style: { color: C.muted }, className: "text-xs px-1 shrink-0" }, "\u2715"))))),
+            inv.length > 0 && React.createElement("div", { className: "flex gap-1.5 overflow-x-auto pb-1 mb-2" }, inv.map((h) => React.createElement("button", { key: "p" + h.id, onClick: () => setPf((p) => ({ ...p, name: h.name, type: h.type })), style: { background: C.paper, border: `1px solid ${C.border}`, color: C.ink }, className: "px-3 py-1 rounded-full text-xs whitespace-nowrap shrink-0" }, h.name))),
+            React.createElement("input", { list: "tw-tickers", placeholder: "\u6A19\u7684\uFF1A\u540D\u7A31\u6216\u4EE3\u865F\uFF08\u5982 0056\u3001\u53F0\u7A4D\u96FB\uFF09", value: pf.name, onChange: (e) => onPName(e.target.value), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm mb-2" }),
             React.createElement("div", { className: "grid grid-cols-2 gap-2 mb-2" },
-                React.createElement("input", { placeholder: "\u6A19\u7684\uFF08\u5982 0056\uFF09", value: pf.name, onChange: (e) => setPf({ ...pf, name: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm col-span-2" }),
                 React.createElement("select", { value: pf.type, onChange: (e) => setPf({ ...pf, type: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" }, ASSETS.map((a) => React.createElement("option", { key: a }, a))),
                 React.createElement("input", { placeholder: "\u6BCF\u671F\u91D1\u984D", type: "number", value: pf.amount, onChange: (e) => setPf({ ...pf, amount: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" })),
             React.createElement("div", { className: "flex gap-2 mb-2" }, [["monthly", "每月"], ["weekly", "每週"]].map(([v, t]) => React.createElement("button", { key: v, onClick: () => setPf({ ...pf, freq: v }), style: { background: pf.freq === v ? C.act : C.paper, color: pf.freq === v ? "#fff" : C.ink, border: `1px solid ${pf.freq === v ? C.act : C.border}` }, className: "flex-1 py-1.5 rounded-lg text-xs font-medium" }, t))),
+            React.createElement("div", { className: "flex items-center gap-2 mb-2" },
+                React.createElement("span", { style: { color: C.muted }, className: "text-xs shrink-0" }, "\u8D77\u59CB\u65E5\u671F"),
+                React.createElement("input", { type: "date", value: (pf.start || todayStr()).replace(/\//g, "-"), onChange: (e) => setPf({ ...pf, start: e.target.value.replace(/-/g, "/") }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "flex-1 rounded-lg px-3 py-2 text-sm" })),
+            pf.freq === "monthly" && (React.createElement("div", { className: "mb-2" },
+                React.createElement("div", { style: { color: C.muted }, className: "text-[11px] mb-1" }, "\u6263\u6B3E\u65E5\uFF08\u6BCF\u6708\uFF0C\u53EF\u591A\u500B\uFF09"),
+                React.createElement("div", { className: "flex flex-wrap gap-1.5 items-center" },
+                    [6, 16, 26].map((dd) => { const on = pf.days.includes(dd); return React.createElement("button", { key: dd, onClick: () => setPf((p) => ({ ...p, days: on ? p.days.filter((x) => x !== dd) : [...p.days, dd] })), style: { background: on ? C.act : C.paper, color: on ? "#fff" : C.ink, border: `1px solid ${on ? C.act : C.border}` }, className: "px-3 py-1 rounded-full text-xs" },
+                        dd,
+                        "\u865F"); }),
+                    pf.days.filter((d) => [6, 16, 26].indexOf(d) < 0).sort((a, b) => a - b).map((dd) => React.createElement("button", { key: dd, onClick: () => setPf((p) => ({ ...p, days: p.days.filter((x) => x !== dd) })), style: { background: C.act, color: "#fff", border: `1px solid ${C.act}` }, className: "px-3 py-1 rounded-full text-xs" },
+                        dd,
+                        "\u865F \u2715")),
+                    React.createElement("input", { type: "number", min: "1", max: "28", placeholder: "\u5176\u4ED6", value: pf.dayInput || "", onChange: (e) => setPf({ ...pf, dayInput: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}`, width: "4.5rem" }, className: "rounded-lg px-2 py-1 text-xs" }),
+                    React.createElement("button", { onClick: () => { const d = +pf.dayInput; if (d >= 1 && d <= 28 && pf.days.indexOf(d) < 0)
+                            setPf((p) => ({ ...p, days: [...p.days, d], dayInput: "" })); }, style: { background: C.card, border: `1px solid ${C.border}`, color: C.ink }, className: "px-2 py-1 rounded-lg text-xs" }, "\uFF0B")))),
             React.createElement("button", { onClick: addPlan, style: { background: C.card, border: `1px solid ${C.border}`, color: C.ink }, className: "w-full rounded-lg py-2 text-sm font-semibold" }, "\uFF0B \u65B0\u589E\u8A08\u756B")),
         stats.length > 0 && (React.createElement("section", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-5" },
             React.createElement("h3", { className: "text-sm font-bold mb-3" },
