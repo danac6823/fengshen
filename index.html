@@ -2292,10 +2292,40 @@ function rateIn(trip, code) { return code === "TWD" ? 1 : ((trip.currencies.find
 function tripTotal(trip) { return trip.expenses.reduce((a, e) => a + e.amount * rateIn(trip, e.cur), 0); }
 function tripSettlement(trip) {
     const people = (trip.people && trip.people.length) ? trip.people : [{ id: "me", name: "我" }];
-    const { pById, paid, share, net, settle } = tripSettlement(trip);
-    const cleared = trip.cleared || {};
-    const setCleared = (pid, v) => updateTrip(trip.id, { cleared: { ...cleared, [pid]: v } });
-    const mySettles = settle.filter((x) => x.from === "me" || x.to === "me");
+    const pById = Object.fromEntries(people.map((p) => [p.id, p]));
+    const paid = {}, share = {};
+    for (const p of people) {
+        paid[p.id] = 0;
+        share[p.id] = 0;
+    }
+    for (const e of (trip.expenses || [])) {
+        const twdAmt = e.amount * rateIn(trip, e.cur);
+        const pyr = (e.payer && pById[e.payer]) ? e.payer : people[0].id;
+        const sh = ((e.sharers && e.sharers.length) ? e.sharers : people.map((p) => p.id)).filter((id) => pById[id]);
+        if (paid[pyr] != null)
+            paid[pyr] += twdAmt;
+        const per = sh.length ? twdAmt / sh.length : 0;
+        for (const id of sh)
+            if (share[id] != null)
+                share[id] += per;
+    }
+    const net = {};
+    for (const p of people)
+        net[p.id] = paid[p.id] - share[p.id];
+    const debtors = people.filter((p) => net[p.id] < -0.5).map((p) => ({ id: p.id, amt: -net[p.id] })).sort((a, b) => b.amt - a.amt);
+    const creditors = people.filter((p) => net[p.id] > 0.5).map((p) => ({ id: p.id, amt: net[p.id] })).sort((a, b) => b.amt - a.amt);
+    const settle = [];
+    let di = 0, ci = 0;
+    while (di < debtors.length && ci < creditors.length) {
+        const pay = Math.min(debtors[di].amt, creditors[ci].amt);
+        settle.push({ from: debtors[di].id, to: creditors[ci].id, amt: pay });
+        debtors[di].amt -= pay;
+        creditors[ci].amt -= pay;
+        if (debtors[di].amt < 0.5)
+            di++;
+        if (creditors[ci].amt < 0.5)
+            ci++;
+    }
     return { people, pById, paid, share, net, settle };
 }
 function tripMyReceivable(trip) {
@@ -2465,6 +2495,9 @@ function TripView({ trip, updateTrip, delTrip, onBack, cards, upsertCardTx, remo
         if (creditors[ci].amt < 0.5)
             ci++;
     }
+    const cleared = trip.cleared || {};
+    const setCleared = (pid, v) => updateTrip(trip.id, { cleared: { ...cleared, [pid]: v } });
+    const mySettles = settle.filter((x) => x.from === "me" || x.to === "me");
     const curSpend = {};
     for (const e of trip.expenses)
         curSpend[e.cur] = (curSpend[e.cur] || 0) + e.amount * rateIn(trip, e.cur);
