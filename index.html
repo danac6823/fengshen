@@ -95,8 +95,9 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = (n) => String(n).padStart(2, "0");
 const dstr = (d) => `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
 const todayStr = () => dstr(new Date());
-const monthOf = (date) => date.slice(0, 7);
-const toDate = (s) => new Date(s.replace(/\//g, "-") + "T00:00:00");
+const monthOf = (date) => (date && typeof date === "string" ? date.slice(0, 7) : "");
+const toDate = (s) => { if (!s || typeof s !== "string")
+    return new Date(NaN); return new Date(s.replace(/\//g, "-") + "T00:00:00"); };
 function recurringInfo(tx) {
     const by = {};
     for (const t of tx) {
@@ -503,12 +504,13 @@ function App() {
                     React.createElement("p", { style: { color: C.muted }, className: "text-[11px]" }, "\u8A18\u5E33 \u00B7 \u8CC7\u7522 \u00B7 \u6295\u8CC7 \u00B7 \u4FDD\u96AA \u00B7 \u65C5\u904A")),
                 React.createElement("nav", { className: "hidden md:flex rounded-full p-0.5", style: { background: C.card, border: `1px solid ${C.border}` } }, NAV.map(([k, l]) => (React.createElement("button", { key: k, onClick: () => setView(k), style: { background: view === k ? C.act : "transparent", color: view === k ? C.paper : C.muted }, className: "px-4 py-1.5 rounded-full text-sm font-medium transition-colors" }, l))))),
             React.createElement(Reminders, { cards: cards, tx: tx, budgets: budgets, activity: activity, view: view, policies: policies }),
-            view === "record" && React.createElement(Record, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, rules: rules, learn: learn, onManage: () => setCardModal(true), markActive: markActive, activity: activity, reminderTime: reminderTime, setReminderTime: setReminderTime }),
-            view === "reconcile" && React.createElement(Reconcile, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, rules: rules, onManage: () => setCardModal(true) }),
-            view === "analyze" && React.createElement(Analyze, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, learn: learn, budgets: budgets, setBudgets: setBudgets, fixedOverride: fixedOverride, setFixedOverride: setFixedOverride }),
-            view === "invest" && React.createElement(Wealth, { inv: inv, setInv: setInv, income: income, setIncome: setIncome, assets: assets, setAssets: setAssets, liabilities: liabilities, setLiabilities: setLiabilities, tx: tx, trips: trips, cash: cash, snaps: snaps, setSnaps: setSnaps, policies: policies, setPolicies: setPolicies, cards: cards, setCards: setCards, priv: priv, setPriv: setPriv }),
-            view === "stock" && React.createElement(Invest, { inv: inv, setInv: setInv, plans: plans, setPlans: setPlans, cash: cash, setCash: setCash, priv: priv, setPriv: setPriv }),
-            view === "trip" && React.createElement(Trips, { trips: trips, setTrips: setTrips, cards: cards, upsertCardTx: upsertCardTx, removeCardTx: removeCardTx, postSplitPay: postSplitPay }),
+            React.createElement(ErrorBoundary, { key: view },
+                view === "record" && React.createElement(Record, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, rules: rules, learn: learn, onManage: () => setCardModal(true), markActive: markActive, activity: activity, reminderTime: reminderTime, setReminderTime: setReminderTime }),
+                view === "reconcile" && React.createElement(Reconcile, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, rules: rules, onManage: () => setCardModal(true) }),
+                view === "analyze" && React.createElement(Analyze, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, learn: learn, budgets: budgets, setBudgets: setBudgets, fixedOverride: fixedOverride, setFixedOverride: setFixedOverride }),
+                view === "invest" && React.createElement(Wealth, { inv: inv, setInv: setInv, income: income, setIncome: setIncome, assets: assets, setAssets: setAssets, liabilities: liabilities, setLiabilities: setLiabilities, tx: tx, trips: trips, cash: cash, snaps: snaps, setSnaps: setSnaps, policies: policies, setPolicies: setPolicies, cards: cards, setCards: setCards, priv: priv, setPriv: setPriv }),
+                view === "stock" && React.createElement(Invest, { inv: inv, setInv: setInv, plans: plans, setPlans: setPlans, cash: cash, setCash: setCash, priv: priv, setPriv: setPriv }),
+                view === "trip" && React.createElement(Trips, { trips: trips, setTrips: setTrips, cards: cards, upsertCardTx: upsertCardTx, removeCardTx: removeCardTx, postSplitPay: postSplitPay })),
             React.createElement("div", { className: "flex gap-2 justify-center mt-6 text-xs" },
                 React.createElement("button", { onClick: exportData, style: { color: C.muted, border: `1px solid ${C.border}` }, className: "px-3 py-1 rounded-full" }, "\u532F\u51FA\u5099\u4EFD"),
                 React.createElement("label", { style: { color: C.muted, border: `1px solid ${C.border}` }, className: "px-3 py-1 rounded-full cursor-pointer" },
@@ -524,6 +526,24 @@ function App() {
         cardModal && React.createElement(CardsModal, { cards: cards, setCards: setCards, tx: tx, assets: assets, onClose: () => setCardModal(false) })));
 }
 /* ---------- 繳款提醒 ---------- */
+class ErrorBoundary extends React.Component {
+    constructor(props) { super(props); this.state = { err: null }; }
+    static getDerivedStateFromError(err) { return { err }; }
+    render() {
+        if (this.state.err) {
+            const e = this.state.err;
+            return (React.createElement("div", { style: { padding: 24, color: "#D77F7E", fontSize: 13, lineHeight: 1.7 } },
+                "\u9019\u500B\u9801\u9762\u767C\u751F\u932F\u8AA4\uFF0C\u5DF2\u907F\u514D\u6574\u9801\u7A7A\u767D\u3002",
+                React.createElement("br", null),
+                React.createElement("span", { style: { color: "#8B8770" } }, String((e && e.message) || e)),
+                React.createElement("br", null),
+                React.createElement("br", null),
+                React.createElement("button", { onClick: () => this.setState({ err: null }), style: { background: "#5E84A8", color: "#fff", borderRadius: 8, padding: "6px 14px", fontSize: 13, border: "none" } }, "\u91CD\u8A66\u9019\u4E00\u9801"),
+                React.createElement("div", { style: { color: "#8B8770", marginTop: 10, fontSize: 12 } }, "\uFF08\u8ACB\u622A\u5716\u9019\u6BB5\u6587\u5B57\u7D66\u6211\uFF0C\u6211\u5C31\u80FD\u5B9A\u4F4D\u554F\u984C\uFF09")));
+        }
+        return this.props.children;
+    }
+}
 function Reminders({ cards, tx, budgets = {}, activity = [], view, policies = [] }) {
     const banners = [];
     if (activity.length && !activity.includes(todayStr())) {
