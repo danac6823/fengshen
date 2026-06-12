@@ -329,6 +329,7 @@ function App() {
     const [loading, setLoading] = useState(true);
     const [view, setView] = useState(() => (typeof window !== "undefined" && window.innerWidth >= 768 ? "analyze" : "record"));
     const [cardModal, setCardModal] = useState(false);
+    const [priv, setPriv] = useState(true);
     useEffect(() => {
         (async () => {
             let cds = [], txs = [], rls = [], ivs = [];
@@ -505,8 +506,8 @@ function App() {
             view === "record" && React.createElement(Record, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, rules: rules, learn: learn, onManage: () => setCardModal(true), markActive: markActive, activity: activity, reminderTime: reminderTime, setReminderTime: setReminderTime }),
             view === "reconcile" && React.createElement(Reconcile, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, rules: rules, onManage: () => setCardModal(true) }),
             view === "analyze" && React.createElement(Analyze, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, learn: learn, budgets: budgets, setBudgets: setBudgets, fixedOverride: fixedOverride, setFixedOverride: setFixedOverride }),
-            view === "invest" && React.createElement(Wealth, { inv: inv, setInv: setInv, income: income, setIncome: setIncome, assets: assets, setAssets: setAssets, liabilities: liabilities, setLiabilities: setLiabilities, tx: tx, trips: trips, cash: cash, snaps: snaps, setSnaps: setSnaps, policies: policies, setPolicies: setPolicies, cards: cards, setCards: setCards }),
-            view === "stock" && React.createElement(Invest, { inv: inv, setInv: setInv, plans: plans, setPlans: setPlans, cash: cash, setCash: setCash }),
+            view === "invest" && React.createElement(Wealth, { inv: inv, setInv: setInv, income: income, setIncome: setIncome, assets: assets, setAssets: setAssets, liabilities: liabilities, setLiabilities: setLiabilities, tx: tx, trips: trips, cash: cash, snaps: snaps, setSnaps: setSnaps, policies: policies, setPolicies: setPolicies, cards: cards, setCards: setCards, priv: priv, setPriv: setPriv }),
+            view === "stock" && React.createElement(Invest, { inv: inv, setInv: setInv, plans: plans, setPlans: setPlans, cash: cash, setCash: setCash, priv: priv, setPriv: setPriv }),
             view === "trip" && React.createElement(Trips, { trips: trips, setTrips: setTrips, cards: cards, upsertCardTx: upsertCardTx, removeCardTx: removeCardTx, postSplitPay: postSplitPay }),
             React.createElement("div", { className: "flex gap-2 justify-center mt-6 text-xs" },
                 React.createElement("button", { onClick: exportData, style: { color: C.muted, border: `1px solid ${C.border}` }, className: "px-3 py-1 rounded-full" }, "\u532F\u51FA\u5099\u4EFD"),
@@ -1322,6 +1323,15 @@ function CardsModal({ cards, setCards, tx, assets = [], onClose }) {
             React.createElement("button", { onClick: add, style: { border: `1px dashed ${C.border}`, color: C.muted }, className: "w-full rounded-xl py-2.5 text-sm mt-3" }, "\uFF0B \u65B0\u589E\u652F\u4ED8\u65B9\u5F0F"))));
 }
 /* ================= 資產 / 儲蓄率 儀表板 ================= */
+function EyeBtn({ hidden, onClick }) {
+    return (React.createElement("button", { onClick: onClick, "aria-label": hidden ? "顯示金額" : "隱藏金額", style: { color: C.muted }, className: "p-1 -m-1 shrink-0" }, hidden
+        ? React.createElement("svg", { width: "18", height: "18", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
+            React.createElement("path", { d: "M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" }),
+            React.createElement("line", { x1: "1", y1: "1", x2: "23", y2: "23" }))
+        : React.createElement("svg", { width: "18", height: "18", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
+            React.createElement("path", { d: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" }),
+            React.createElement("circle", { cx: "12", cy: "12", r: "3" }))));
+}
 const PTYPES = ["壽險", "醫療", "意外", "重疾", "癌症", "儲蓄", "投資型", "年金"];
 const PROTECT_TYPES = ["壽險", "醫療", "意外", "重疾", "癌症"];
 const VALUE_TYPES = ["儲蓄", "投資型", "年金"];
@@ -1500,7 +1510,7 @@ function xirr(flows) {
     }
     return isFinite(r) ? r : null;
 }
-function Wealth({ inv, setInv, income, setIncome, assets, setAssets, liabilities, setLiabilities, tx, trips, cash, snaps, setSnaps, policies, setPolicies, cards, setCards }) {
+function Wealth({ inv, setInv, income, setIncome, assets, setAssets, liabilities, setLiabilities, tx, trips, cash, snaps, setSnaps, policies, setPolicies, cards, setCards, priv, setPriv }) {
     const [af, setAf] = useState({ name: "", type: "現金", value: "" });
     const [lf, setLf] = useState({ name: "", value: "" });
     const receivable = tx.reduce((a, t) => a + (t.biz && !t.reimbursed ? t.amount : 0), 0);
@@ -1581,8 +1591,10 @@ function Wealth({ inv, setInv, income, setIncome, assets, setAssets, liabilities
     };
     return (React.createElement("div", { className: "space-y-4" },
         React.createElement("section", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-6" },
-            React.createElement("span", { style: { color: C.muted }, className: "text-xs" }, "\u6DE8\u8CC7\u7522"),
-            React.createElement("div", { style: { fontVariantNumeric: "tabular-nums", color: net >= 0 ? C.ink : C.loss }, className: "text-4xl font-extrabold mt-1 mb-4" }, twd(net)),
+            React.createElement("div", { className: "flex items-center justify-between" },
+                React.createElement("span", { style: { color: C.muted }, className: "text-xs" }, "\u6DE8\u8CC7\u7522"),
+                React.createElement(EyeBtn, { hidden: priv, onClick: () => setPriv(!priv) })),
+            React.createElement("div", { onClick: () => setPriv(!priv), style: { fontVariantNumeric: "tabular-nums", color: net >= 0 ? C.ink : C.loss }, className: "text-4xl font-extrabold mt-1 mb-4 cursor-pointer select-none" }, priv ? "＄ ••••••" : twd(net)),
             React.createElement("div", { className: "flex h-4 rounded-lg overflow-hidden mb-3", style: { background: C.paper } },
                 React.createElement("div", { style: { width: pct(Math.max(0, net) / denom), background: C.gain } }),
                 React.createElement("div", { style: { width: pct(Math.min(liabTotal, assetTotal) / denom), background: C.loss } })),
@@ -1590,11 +1602,11 @@ function Wealth({ inv, setInv, income, setIncome, assets, setAssets, liabilities
                 React.createElement("span", null,
                     React.createElement("span", { className: "inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle", style: { background: C.gain } }),
                     "\u7E3D\u8CC7\u7522 ",
-                    React.createElement("b", { style: { fontVariantNumeric: "tabular-nums" } }, twd(assetTotal))),
+                    React.createElement("b", { style: { fontVariantNumeric: "tabular-nums" } }, priv ? "••••" : twd(assetTotal))),
                 React.createElement("span", null,
                     React.createElement("span", { className: "inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle", style: { background: C.loss } }),
                     "\u7E3D\u8CA0\u50B5 ",
-                    React.createElement("b", { style: { fontVariantNumeric: "tabular-nums" } }, twd(liabTotal))))),
+                    React.createElement("b", { style: { fontVariantNumeric: "tabular-nums" } }, priv ? "••••" : twd(liabTotal))))),
         trend.length >= 2 && (React.createElement("section", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-5" },
             React.createElement("h3", { className: "text-sm font-bold mb-3" },
                 "\u6DE8\u8CC7\u7522\u8D70\u52E2 ",
@@ -1829,10 +1841,12 @@ const TW_TICKERS = [
     ["2603", "長榮", "股票"], ["2609", "陽明", "股票"], ["2615", "萬海", "股票"], ["2002", "中鋼", "股票"], ["1301", "台塑", "股票"], ["1303", "南亞", "股票"], ["1326", "台化", "股票"], ["6505", "台塑化", "股票"], ["1216", "統一", "股票"], ["2912", "統一超", "股票"], ["2207", "和泰車", "股票"], ["1101", "台泥", "股票"], ["1102", "亞泥", "股票"], ["9910", "豐泰", "股票"], ["5871", "中租-KY", "股票"], ["3045", "台灣大", "股票"], ["4904", "遠傳", "股票"],
 ];
 const A_COLOR = { 股票: "#4FA98F", ETF: "#6FB59E", 債券: "#DB9270", 現金: "#A3BD9C", 加密: "#DD89A4", 其他: "#A99BCB" };
-function Invest({ inv, setInv, plans, setPlans, cash, setCash }) {
+function Invest({ inv, setInv, plans, setPlans, cash, setCash, priv, setPriv }) {
     const [tf, setTf] = useState({ name: "", type: "股票", date: todayStr(), kind: "買", shares: "", price: "", fee: "" });
     const [pf, setPf] = useState({ name: "", type: "股票", amount: "", freq: "monthly", start: todayStr(), days: [], dayInput: "" });
     const [exec, setExec] = useState(null);
+    const [planOpen, setPlanOpen] = useState(false);
+    const [editId, setEditId] = useState(null);
     const [openH, setOpenH] = useState(null);
     const [cf, setCf] = useState({ kind: "入金", amount: "", date: todayStr(), note: "" });
     const addTxn = (name, type, txn) => setInv((p) => {
@@ -1857,11 +1871,25 @@ function Invest({ inv, setInv, plans, setPlans, cash, setCash }) {
     const addCash = () => { if (!cf.amount)
         return; setCash((p) => [...(p || []), { id: uid(), kind: cf.kind, amount: +cf.amount, date: cf.date, note: cf.note.trim() }]); setCf({ ...cf, amount: "", note: "" }); };
     const delCash = (id) => setCash((p) => (p || []).filter((c) => c.id !== id));
-    const addPlan = () => { if (!pf.name.trim() || !pf.amount)
-        return; setPlans((p) => [...(p || []), { id: uid(), name: pf.name.trim(), type: pf.type, amount: +pf.amount, freq: pf.freq, start: pf.start || todayStr(), days: pf.freq === "monthly" ? [...pf.days].sort((a, b) => a - b) : [], lastDone: "" }]); setPf({ name: "", type: "股票", amount: "", freq: "monthly", start: todayStr(), days: [], dayInput: "" }); };
-    const delPlan = (id) => setPlans((p) => p.filter((x) => x.id !== id));
+    const blankPf = { name: "", type: "股票", amount: "", freq: "monthly", start: todayStr(), days: [], dayInput: "" };
+    const openNew = () => { setEditId(null); setPf(blankPf); setPlanOpen(true); };
+    const openEdit = (pl) => { setEditId(pl.id); setPf({ name: pl.name, type: pl.type, amount: String(pl.amount), freq: pl.freq, start: pl.start || todayStr(), days: pl.days || [], dayInput: "" }); setPlanOpen(true); };
+    const savePlan = () => {
+        if (!pf.name.trim() || !pf.amount)
+            return;
+        const data = { name: pf.name.trim(), type: pf.type, amount: +pf.amount, freq: pf.freq, start: pf.start || todayStr(), days: pf.freq === "monthly" ? [...pf.days].sort((a, b) => a - b) : [] };
+        if (editId)
+            setPlans((p) => p.map((x) => (x.id === editId ? { ...x, ...data } : x)));
+        else
+            setPlans((p) => [...(p || []), { id: uid(), ...data, lastDone: "" }]);
+        setPlanOpen(false);
+        setEditId(null);
+        setPf(blankPf);
+    };
+    const delPlan = (id) => { setPlans((p) => p.filter((x) => x.id !== id)); setPlanOpen(false); setEditId(null); };
+    const startExec = (pl) => setExec({ plan: pl, date: planLatest(pl, todayStr()) || todayStr(), shares: "", price: "", fee: "" });
     const runExec = () => { if (!exec || !exec.shares || !exec.price)
-        return; addTxn(exec.plan.name, exec.plan.type, { id: uid(), date: todayStr(), kind: "買", shares: +exec.shares, price: +exec.price, fee: +exec.fee || 0, dca: true }); setPlans((p) => p.map((x) => (x.id === exec.plan.id ? { ...x, lastDone: todayStr() } : x))); setExec(null); };
+        return; const d = exec.date || todayStr(); addTxn(exec.plan.name, exec.plan.type, { id: uid(), date: d, kind: "買", shares: +exec.shares, price: +exec.price, fee: +exec.fee || 0, dca: true }); setPlans((p) => p.map((x) => (x.id === exec.plan.id ? { ...x, lastDone: d } : x))); setExec(null); };
     const stats = inv.map((h) => ({ h, ...holdingStats(h) }));
     const tot = stats.reduce((o, x) => ({ value: o.value + x.value, invested: o.invested + x.invested, unreal: o.unreal + x.unreal, realized: o.realized + x.realized }), { value: 0, invested: 0, unreal: 0, realized: 0 });
     const ret = tot.invested ? tot.unreal / tot.invested : 0;
@@ -1921,15 +1949,17 @@ function Invest({ inv, setInv, plans, setPlans, cash, setCash }) {
     const realYearArr = Object.entries(realizedByYear(inv)).sort((a, b) => b[0].localeCompare(a[0]));
     return (React.createElement("div", { className: "space-y-4" },
         React.createElement("section", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-6" },
+            React.createElement("div", { className: "flex items-center justify-between mb-2" },
+                React.createElement("span", { style: { color: C.muted }, className: "text-xs" }, "\u6295\u8CC7\u6982\u89BD"),
+                React.createElement(EyeBtn, { hidden: priv, onClick: () => setPriv(!priv) })),
             React.createElement("div", { className: "grid grid-cols-3 gap-3 mb-3" },
-                React.createElement(Stat, { label: "\u7E3D\u5E02\u503C", v: twd(tot.value) }),
-                React.createElement(Stat, { label: "\u6295\u5165\u6210\u672C", v: twd(tot.invested), muted: true }),
+                React.createElement(Stat, { label: "\u7E3D\u5E02\u503C", v: priv ? "••••" : twd(tot.value) }),
+                React.createElement(Stat, { label: "\u6295\u5165\u6210\u672C", v: priv ? "••••" : twd(tot.invested), muted: true }),
                 React.createElement(Stat, { label: "\u5831\u916C\u7387", v: `${ret >= 0 ? "+" : ""}${(ret * 100).toFixed(1)}%`, color: tot.unreal >= 0 ? C.gain : C.loss })),
             React.createElement("div", { className: "flex justify-between items-center text-sm" },
                 React.createElement("span", { style: { color: tot.unreal >= 0 ? C.gain : C.loss } },
                     "\u672A\u5BE6\u73FE ",
-                    tot.unreal >= 0 ? "+" : "",
-                    twd(tot.unreal)),
+                    priv ? "••••" : `${tot.unreal >= 0 ? "+" : ""}${twd(tot.unreal)}`),
                 annualRet != null && React.createElement("span", { title: "\u8CC7\u91D1\u52A0\u6B0A\u5E74\u5316\u5831\u916C\uFF08XIRR\uFF09", style: { color: annualRet >= 0 ? C.gain : C.loss } },
                     "\u5E74\u5316 ",
                     annualRet >= 0 ? "+" : "",
@@ -1937,13 +1967,12 @@ function Invest({ inv, setInv, plans, setPlans, cash, setCash }) {
                     "%"),
                 React.createElement("span", { style: { color: C.muted } },
                     "\u5DF2\u5BE6\u73FE ",
-                    tot.realized >= 0 ? "+" : "",
-                    twd(tot.realized)))),
+                    priv ? "••••" : `${tot.realized >= 0 ? "+" : ""}${twd(tot.realized)}`))),
         React.createElement("section", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-5" },
             React.createElement("h3", { className: "text-sm font-bold mb-2" }, "\u4EA4\u5272\u5E33\u6236"),
             React.createElement("div", { className: "flex items-baseline justify-between mb-2" },
                 React.createElement("span", { style: { color: C.muted }, className: "text-xs" }, "\u53EF\u7528\u8CC7\u91D1"),
-                React.createElement("span", { style: { fontVariantNumeric: "tabular-nums", color: available >= 0 ? C.ink : C.loss }, className: "text-2xl font-extrabold" }, twd(available))),
+                React.createElement("span", { onClick: () => setPriv(!priv), style: { fontVariantNumeric: "tabular-nums", color: available >= 0 ? C.ink : C.loss }, className: "text-2xl font-extrabold cursor-pointer select-none" }, priv ? "••••" : twd(available))),
             React.createElement("div", { style: { color: C.muted }, className: "text-[11px] mb-3 leading-relaxed" },
                 "\u5165\u91D1 ",
                 twd(depo),
@@ -1985,7 +2014,7 @@ function Invest({ inv, setInv, plans, setPlans, cash, setCash }) {
                         " \u00B7 ",
                         pl.freq === "weekly" ? "每週" : "每月",
                         pl.days && pl.days.length ? ` · 應扣 ${(planLatest(pl, todayStr()) || "").slice(5)}` : "")),
-                React.createElement("button", { onClick: () => setExec({ plan: pl, shares: "", price: "", fee: "" }), style: { background: C.self, color: "#fff" }, className: "text-xs rounded px-3 py-1 shrink-0" }, "\u8F38\u5165\u672C\u671F"))))))),
+                React.createElement("button", { onClick: () => startExec(pl), style: { background: C.self, color: "#fff" }, className: "text-xs rounded px-3 py-1 shrink-0" }, "\u8A18\u9304\u6263\u6B3E"))))))),
         tot.value > 0 && (React.createElement("section", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-5" },
             React.createElement("h3", { className: "text-sm font-bold mb-3" }, "\u8CC7\u7522\u914D\u7F6E"),
             React.createElement("div", { className: "flex h-7 rounded-lg overflow-hidden mb-3", style: { background: C.paper } }, ASSETS.filter((a) => alloc[a]).map((a) => React.createElement("div", { key: a, style: { width: pct(alloc[a] / tot.value), background: A_COLOR[a] } }))),
@@ -2041,43 +2070,31 @@ function Invest({ inv, setInv, plans, setPlans, cash, setCash }) {
                 twd(+tf.shares * +tf.price + (+tf.fee || 0) * (tf.kind === "買" ? 1 : 0))),
             React.createElement("button", { onClick: submitTxn, disabled: !tf.name.trim() || !tf.shares || !tf.price, style: { background: C.act, color: "#fff", opacity: (tf.name.trim() && tf.shares && tf.price) ? 1 : 0.4 }, className: "w-full rounded-lg py-2.5 text-sm font-semibold" }, "\u52A0\u5165\u4EA4\u6613")),
         React.createElement("section", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-5" },
-            React.createElement("h3", { className: "text-sm font-bold mb-3" }, "\u5B9A\u671F\u5B9A\u984D\u8A08\u756B"),
-            (plans || []).length > 0 && React.createElement("div", { className: "space-y-1 mb-3" }, plans.map((pl) => (React.createElement("div", { key: pl.id, className: "flex items-center gap-2 text-sm py-1", style: { borderBottom: `1px solid ${C.border}` } },
-                React.createElement("span", { className: "flex-1 truncate" },
-                    pl.name,
-                    " ",
-                    React.createElement("span", { style: { color: C.muted }, className: "text-xs" },
-                        pl.type,
-                        " \u00B7 ",
-                        twd(pl.amount),
-                        "/",
-                        pl.freq === "weekly" ? "週" : "月",
-                        pl.days && pl.days.length ? ` · ${pl.days.join("/")}號` : "",
-                        pl.lastDone ? ` · 上次 ${pl.lastDone.slice(5)}` : "")),
-                React.createElement("button", { onClick: () => setExec({ plan: pl, shares: "", price: "", fee: "" }), style: { color: C.self }, className: "text-xs underline shrink-0" }, "\u57F7\u884C"),
-                React.createElement("button", { onClick: () => delPlan(pl.id), style: { color: C.muted }, className: "text-xs px-1 shrink-0" }, "\u2715"))))),
-            inv.length > 0 && React.createElement("div", { className: "flex gap-1.5 overflow-x-auto pb-1 mb-2" }, inv.map((h) => React.createElement("button", { key: "p" + h.id, onClick: () => setPf((p) => ({ ...p, name: h.name, type: h.type })), style: { background: C.paper, border: `1px solid ${C.border}`, color: C.ink }, className: "px-3 py-1 rounded-full text-xs whitespace-nowrap shrink-0" }, h.name))),
-            React.createElement("input", { list: "tw-tickers", placeholder: "\u6A19\u7684\uFF1A\u540D\u7A31\u6216\u4EE3\u865F\uFF08\u5982 0056\u3001\u53F0\u7A4D\u96FB\uFF09", value: pf.name, onChange: (e) => onPName(e.target.value), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm mb-2" }),
-            React.createElement("div", { className: "grid grid-cols-2 gap-2 mb-2" },
-                React.createElement("select", { value: pf.type, onChange: (e) => setPf({ ...pf, type: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" }, ASSETS.map((a) => React.createElement("option", { key: a }, a))),
-                React.createElement("input", { placeholder: "\u6BCF\u671F\u91D1\u984D", type: "number", value: pf.amount, onChange: (e) => setPf({ ...pf, amount: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" })),
-            React.createElement("div", { className: "flex gap-2 mb-2" }, [["monthly", "每月"], ["weekly", "每週"]].map(([v, t]) => React.createElement("button", { key: v, onClick: () => setPf({ ...pf, freq: v }), style: { background: pf.freq === v ? C.act : C.paper, color: pf.freq === v ? "#fff" : C.ink, border: `1px solid ${pf.freq === v ? C.act : C.border}` }, className: "flex-1 py-1.5 rounded-lg text-xs font-medium" }, t))),
-            React.createElement("div", { className: "flex items-center gap-2 mb-2" },
-                React.createElement("span", { style: { color: C.muted }, className: "text-xs shrink-0" }, "\u8D77\u59CB\u65E5\u671F"),
-                React.createElement("input", { type: "date", value: (pf.start || todayStr()).replace(/\//g, "-"), onChange: (e) => setPf({ ...pf, start: e.target.value.replace(/-/g, "/") }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "flex-1 rounded-lg px-3 py-2 text-sm" })),
-            pf.freq === "monthly" && (React.createElement("div", { className: "mb-2" },
-                React.createElement("div", { style: { color: C.muted }, className: "text-[11px] mb-1" }, "\u6263\u6B3E\u65E5\uFF08\u6BCF\u6708\uFF0C\u53EF\u591A\u500B\uFF09"),
-                React.createElement("div", { className: "flex flex-wrap gap-1.5 items-center" },
-                    [6, 16, 26].map((dd) => { const on = pf.days.includes(dd); return React.createElement("button", { key: dd, onClick: () => setPf((p) => ({ ...p, days: on ? p.days.filter((x) => x !== dd) : [...p.days, dd] })), style: { background: on ? C.act : C.paper, color: on ? "#fff" : C.ink, border: `1px solid ${on ? C.act : C.border}` }, className: "px-3 py-1 rounded-full text-xs" },
-                        dd,
-                        "\u865F"); }),
-                    pf.days.filter((d) => [6, 16, 26].indexOf(d) < 0).sort((a, b) => a - b).map((dd) => React.createElement("button", { key: dd, onClick: () => setPf((p) => ({ ...p, days: p.days.filter((x) => x !== dd) })), style: { background: C.act, color: "#fff", border: `1px solid ${C.act}` }, className: "px-3 py-1 rounded-full text-xs" },
-                        dd,
-                        "\u865F \u2715")),
-                    React.createElement("input", { type: "number", min: "1", max: "28", placeholder: "\u5176\u4ED6", value: pf.dayInput || "", onChange: (e) => setPf({ ...pf, dayInput: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}`, width: "4.5rem" }, className: "rounded-lg px-2 py-1 text-xs" }),
-                    React.createElement("button", { onClick: () => { const d = +pf.dayInput; if (d >= 1 && d <= 28 && pf.days.indexOf(d) < 0)
-                            setPf((p) => ({ ...p, days: [...p.days, d], dayInput: "" })); }, style: { background: C.card, border: `1px solid ${C.border}`, color: C.ink }, className: "px-2 py-1 rounded-lg text-xs" }, "\uFF0B")))),
-            React.createElement("button", { onClick: addPlan, style: { background: C.card, border: `1px solid ${C.border}`, color: C.ink }, className: "w-full rounded-lg py-2 text-sm font-semibold" }, "\uFF0B \u65B0\u589E\u8A08\u756B")),
+            React.createElement("div", { className: "flex items-center justify-between mb-3" },
+                React.createElement("h3", { className: "text-sm font-bold" }, "\u5B9A\u671F\u5B9A\u984D\u8A08\u756B"),
+                React.createElement("button", { onClick: openNew, style: { color: C.act }, className: "text-xs font-semibold" }, "\uFF0B \u65B0\u589E\u8A08\u756B")),
+            (plans || []).length === 0 ? (React.createElement("p", { style: { color: C.muted }, className: "text-xs leading-relaxed" }, "\u5C1A\u7121\u8A08\u756B\u3002\u9EDE\u300C\uFF0B \u65B0\u589E\u8A08\u756B\u300D\u8A2D\u5B9A\u6A19\u7684\u3001\u6BCF\u671F\u91D1\u984D\u3001\u8D77\u59CB\u65E5\u8207\u6263\u6B3E\u65E5\uFF1B\u5EFA\u7ACB\u5F8C\u8A08\u756B\u5373\u9032\u884C\u4E2D\uFF0C\u5230\u6263\u6B3E\u65E5\u6703\u51FA\u73FE\u5728\u4E0A\u65B9\u5F85\u57F7\u884C\u3002")) : (React.createElement("div", { className: "space-y-2" }, plans.map((pl) => {
+                const started = !pl.start || pl.start <= todayStr();
+                const nx = planNext(pl, todayStr());
+                return (React.createElement("div", { key: pl.id, style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-xl p-3" },
+                    React.createElement("div", { className: "flex items-center gap-2" },
+                        React.createElement("button", { onClick: () => openEdit(pl), className: "flex-1 text-left min-w-0" },
+                            React.createElement("div", { className: "text-sm font-semibold truncate" },
+                                pl.name,
+                                " ",
+                                React.createElement("span", { style: { color: C.muted }, className: "text-xs font-normal" }, pl.type)),
+                            React.createElement("div", { style: { color: C.muted }, className: "text-[11px] mt-0.5" },
+                                "\u6BCF\u671F ",
+                                twd(pl.amount),
+                                " \u00B7 ",
+                                pl.freq === "weekly" ? "每週" : (pl.days && pl.days.length ? `每月 ${pl.days.join("/")}號` : "每月")),
+                            React.createElement("div", { style: { color: started ? C.self : C.muted }, className: "text-[11px] mt-0.5" },
+                                started ? "進行中" : `${(pl.start || "").slice(5)} 起`,
+                                nx ? ` · 下次 ${nx.slice(5)}` : "",
+                                pl.lastDone ? ` · 上次 ${pl.lastDone.slice(5)}` : "")),
+                        React.createElement("button", { onClick: () => startExec(pl), style: { background: C.act, color: "#fff" }, className: "text-xs rounded-lg px-3 py-1.5 font-semibold shrink-0" }, "\u8A18\u9304\u6263\u6B3E"))));
+            }))),
+            React.createElement("p", { style: { color: C.muted }, className: "text-[11px] mt-3" }, "\u9EDE\u8A08\u756B\u53EF\u7DE8\u8F2F\u8A73\u7D30\u8A2D\u5B9A\u3002")),
         stats.length > 0 && (React.createElement("section", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-5" },
             React.createElement("h3", { className: "text-sm font-bold mb-3" },
                 "\u6301\u6709\u660E\u7D30 ",
@@ -2119,20 +2136,69 @@ function Invest({ inv, setInv, plans, setPlans, cash, setCash }) {
                             t.fee ? ` +費${t.fee}` : ""),
                         React.createElement("button", { onClick: () => delTxn(h.id, t.id), style: { color: C.muted }, className: "px-1 shrink-0" }, "\u2715"))))))))))))),
         exec && (React.createElement("div", { className: "fixed inset-0 z-50 flex items-end md:items-center justify-center", style: { background: "rgba(38,52,45,0.42)" }, onClick: () => setExec(null) },
-            React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-full md:max-w-sm rounded-t-2xl md:rounded-2xl p-5" },
-                React.createElement("h2", { className: "text-lg font-bold mb-1" }, "\u672C\u671F\u5B9A\u671F\u5B9A\u984D"),
+            React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-full md:max-w-sm max-h-[88vh] overflow-y-auto rounded-t-2xl md:rounded-2xl p-5" },
+                React.createElement("div", { className: "flex items-center justify-between mb-1" },
+                    React.createElement("h2", { className: "text-lg font-bold" }, "\u8A18\u9304\u6263\u6B3E"),
+                    React.createElement("button", { onClick: () => setExec(null), style: { color: C.muted }, className: "text-sm" }, "\u95DC\u9589")),
                 React.createElement("p", { style: { color: C.muted }, className: "text-xs mb-3" },
                     exec.plan.name,
                     " \u00B7 \u8A08\u756B\u6BCF\u671F ",
-                    twd(exec.plan.amount)),
+                    twd(exec.plan.amount),
+                    exec.plan.freq === "weekly" ? " · 每週" : (exec.plan.days && exec.plan.days.length ? ` · 每月 ${exec.plan.days.join("/")}號` : "")),
+                React.createElement("label", { style: { color: C.muted }, className: "text-[11px]" }, "\u6263\u6B3E\u65E5\u671F"),
+                exec.plan.days && exec.plan.days.length > 0 && (React.createElement("div", { className: "flex flex-wrap gap-1.5 mb-1.5 mt-0.5" }, exec.plan.days.map((dd) => { const t = toDate(todayStr()); const ds = dstr(new Date(t.getFullYear(), t.getMonth(), dd)); const on = exec.date === ds; return React.createElement("button", { key: dd, onClick: () => setExec({ ...exec, date: ds }), style: { background: on ? C.act : C.card, color: on ? "#fff" : C.ink, border: `1px solid ${on ? C.act : C.border}` }, className: "px-3 py-1 rounded-full text-xs" },
+                    dd,
+                    "\u865F"); }))),
+                React.createElement("input", { type: "date", value: (exec.date || todayStr()).replace(/\//g, "-"), onChange: (e) => setExec({ ...exec, date: e.target.value.replace(/-/g, "/") }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm mb-2 mt-0.5" }),
                 React.createElement("div", { className: "grid grid-cols-2 gap-2 mb-2" },
-                    React.createElement("input", { placeholder: "\u6210\u4EA4\u80A1\u6578", type: "number", value: exec.shares, onChange: (e) => setExec({ ...exec, shares: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" }),
-                    React.createElement("input", { placeholder: "\u6210\u4EA4\u50F9", type: "number", value: exec.price, onChange: (e) => setExec({ ...exec, price: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" })),
-                React.createElement("input", { placeholder: "\u624B\u7E8C\u8CBB(\u9078\u586B)", type: "number", value: exec.fee, onChange: (e) => setExec({ ...exec, fee: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm mb-2" }),
+                    React.createElement("div", null,
+                        React.createElement("label", { style: { color: C.muted }, className: "text-[11px]" }, "\u6210\u4EA4\u80A1\u6578"),
+                        React.createElement("input", { placeholder: "\u80A1\u6578", type: "number", value: exec.shares, onChange: (e) => setExec({ ...exec, shares: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm mt-0.5" })),
+                    React.createElement("div", null,
+                        React.createElement("label", { style: { color: C.muted }, className: "text-[11px]" }, "\u6210\u4EA4\u50F9"),
+                        React.createElement("input", { placeholder: "\u50F9\u683C", type: "number", value: exec.price, onChange: (e) => setExec({ ...exec, price: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm mt-0.5" }))),
+                React.createElement("label", { style: { color: C.muted }, className: "text-[11px]" }, "\u624B\u7E8C\u8CBB\uFF08\u9078\u586B\uFF09"),
+                React.createElement("input", { placeholder: "\u624B\u7E8C\u8CBB", type: "number", value: exec.fee, onChange: (e) => setExec({ ...exec, fee: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm mb-2 mt-0.5" }),
                 exec.shares && exec.price && React.createElement("p", { style: { color: C.muted }, className: "text-[11px] mb-2" },
                     "\u672C\u671F\u6295\u5165 \u2248 ",
                     twd(+exec.shares * +exec.price + (+exec.fee || 0))),
-                React.createElement("button", { onClick: runExec, disabled: !exec.shares || !exec.price, style: { background: C.act, color: "#fff", opacity: (exec.shares && exec.price) ? 1 : 0.4 }, className: "w-full rounded-lg py-2.5 text-sm font-semibold" }, "\u8A18\u70BA\u4E00\u7B46\u8CB7\u9032"))))));
+                React.createElement("button", { onClick: runExec, disabled: !exec.shares || !exec.price, style: { background: (exec.shares && exec.price) ? C.act : C.border, color: "#fff" }, className: "w-full rounded-lg py-2.5 text-sm font-semibold" },
+                    "\u8A18\u70BA\u8CB7\u9032\uFF08",
+                    (exec.date || todayStr()).slice(5),
+                    "\uFF09")))),
+        planOpen && (React.createElement("div", { className: "fixed inset-0 z-50 flex items-end md:items-center justify-center", style: { background: "rgba(38,52,45,0.42)" }, onClick: () => { setPlanOpen(false); setEditId(null); } },
+            React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-full md:max-w-md max-h-[88vh] overflow-y-auto rounded-t-2xl md:rounded-2xl p-5" },
+                React.createElement("div", { className: "flex items-center justify-between mb-3" },
+                    React.createElement("h2", { className: "text-lg font-bold" }, editId ? "編輯計畫" : "新增定期定額"),
+                    React.createElement("button", { onClick: () => { setPlanOpen(false); setEditId(null); }, style: { color: C.muted }, className: "text-sm" }, "\u95DC\u9589")),
+                inv.length > 0 && React.createElement("div", { className: "flex gap-1.5 overflow-x-auto pb-1 mb-2" }, inv.map((h) => React.createElement("button", { key: "pm" + h.id, onClick: () => setPf((p) => ({ ...p, name: h.name, type: h.type })), style: { background: C.card, border: `1px solid ${C.border}`, color: C.ink }, className: "px-3 py-1 rounded-full text-xs whitespace-nowrap shrink-0" }, h.name))),
+                React.createElement("label", { style: { color: C.muted }, className: "text-[11px]" }, "\u6A19\u7684"),
+                React.createElement("input", { list: "tw-tickers", placeholder: "\u540D\u7A31\u6216\u4EE3\u865F\uFF08\u5982 0056\u3001\u53F0\u7A4D\u96FB\uFF09", value: pf.name, onChange: (e) => onPName(e.target.value), style: { background: C.card, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm mb-2 mt-0.5" }),
+                React.createElement("div", { className: "grid grid-cols-2 gap-2 mb-2" },
+                    React.createElement("div", null,
+                        React.createElement("label", { style: { color: C.muted }, className: "text-[11px]" }, "\u985E\u578B"),
+                        React.createElement("select", { value: pf.type, onChange: (e) => setPf({ ...pf, type: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm mt-0.5" }, ASSETS.map((a) => React.createElement("option", { key: a }, a)))),
+                    React.createElement("div", null,
+                        React.createElement("label", { style: { color: C.muted }, className: "text-[11px]" }, "\u6BCF\u671F\u91D1\u984D"),
+                        React.createElement("input", { placeholder: "\u91D1\u984D", type: "number", value: pf.amount, onChange: (e) => setPf({ ...pf, amount: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm mt-0.5" }))),
+                React.createElement("label", { style: { color: C.muted }, className: "text-[11px]" }, "\u983B\u7387"),
+                React.createElement("div", { className: "flex gap-2 mb-2 mt-0.5" }, [["monthly", "每月"], ["weekly", "每週"]].map(([v, t]) => React.createElement("button", { key: v, onClick: () => setPf({ ...pf, freq: v }), style: { background: pf.freq === v ? C.act : C.card, color: pf.freq === v ? "#fff" : C.ink, border: `1px solid ${pf.freq === v ? C.act : C.border}` }, className: "flex-1 py-1.5 rounded-lg text-xs font-medium" }, t))),
+                React.createElement("label", { style: { color: C.muted }, className: "text-[11px]" }, "\u8D77\u59CB\u65E5\u671F"),
+                React.createElement("input", { type: "date", value: (pf.start || todayStr()).replace(/\//g, "-"), onChange: (e) => setPf({ ...pf, start: e.target.value.replace(/-/g, "/") }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm mb-2 mt-0.5" }),
+                pf.freq === "monthly" && (React.createElement("div", { className: "mb-3" },
+                    React.createElement("label", { style: { color: C.muted }, className: "text-[11px]" }, "\u6263\u6B3E\u65E5\uFF08\u6BCF\u6708\uFF0C\u53EF\u591A\u500B\uFF09"),
+                    React.createElement("div", { className: "flex flex-wrap gap-1.5 items-center mt-1" },
+                        [6, 16, 26].map((dd) => { const on = pf.days.includes(dd); return React.createElement("button", { key: dd, onClick: () => setPf((p) => ({ ...p, days: on ? p.days.filter((x) => x !== dd) : [...p.days, dd] })), style: { background: on ? C.act : C.card, color: on ? "#fff" : C.ink, border: `1px solid ${on ? C.act : C.border}` }, className: "px-3 py-1 rounded-full text-xs" },
+                            dd,
+                            "\u865F"); }),
+                        pf.days.filter((d) => [6, 16, 26].indexOf(d) < 0).sort((a, b) => a - b).map((dd) => React.createElement("button", { key: dd, onClick: () => setPf((p) => ({ ...p, days: p.days.filter((x) => x !== dd) })), style: { background: C.act, color: "#fff", border: `1px solid ${C.act}` }, className: "px-3 py-1 rounded-full text-xs" },
+                            dd,
+                            "\u865F \u2715")),
+                        React.createElement("input", { type: "number", min: "1", max: "28", placeholder: "\u5176\u4ED6", value: pf.dayInput || "", onChange: (e) => setPf({ ...pf, dayInput: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}`, width: "4.5rem" }, className: "rounded-lg px-2 py-1 text-xs" }),
+                        React.createElement("button", { onClick: () => { const d = +pf.dayInput; if (d >= 1 && d <= 28 && pf.days.indexOf(d) < 0)
+                                setPf((p) => ({ ...p, days: [...p.days, d], dayInput: "" })); }, style: { background: C.card, border: `1px solid ${C.border}`, color: C.ink }, className: "px-2 py-1 rounded-lg text-xs" }, "\uFF0B")))),
+                React.createElement("button", { onClick: savePlan, disabled: !pf.name.trim() || !pf.amount, style: { background: (pf.name.trim() && pf.amount) ? C.act : C.border, color: "#fff" }, className: "w-full rounded-lg py-2.5 text-sm font-semibold" }, editId ? "儲存變更" : "建立計畫"),
+                editId && React.createElement("button", { onClick: () => delPlan(editId), style: { color: C.loss }, className: "w-full text-xs mt-2 py-1" }, "\u522A\u9664\u9019\u500B\u8A08\u756B"))))));
 }
 function BudgetCard({ monthLabel, spend, budgets, setBudgets }) {
     const rows = [["總額", "total"], ["家用", "家用"], ["個人", "個人"], ["狗貓", "狗貓"]];
