@@ -175,47 +175,80 @@ function classify(merchant, rules) {
             return { category: e.p, sub: e.s };
     return { category: "未分類", sub: null };
 }
-const SKIP = ["本期應繳", "最低應繳", "前期", "結轉", "循環利息", "本期帳單", "上期", "繳款", "信用額度", "卡號", "小計", "合計", "總計", "total", "balance", "帳單明細", "交易日", "消費明細"];
+const SKIP = ["本期應繳", "最低應繳", "前期", "結轉", "循環利息", "本期帳單", "上期", "繳款", "信用額度", "卡號", "小計", "合計", "總計", "total", "balance", "帳單明細", "交易日", "消費明細", "消費日期", "臺幣金額", "台幣金額", "末4碼"];
 function parseStatement(text, fallbackYear) {
     const out = [];
+    const toHalf = (s) => s.replace(/[\uFF01-\uFF5E]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/\u3000/g, " ");
     const dateRe = /(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})|(\d{1,2})[/.-](\d{1,2})(?![/.\d])/;
     const amtRe = /-?(?:NT\$|\$)?\s?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?(?:NT\$|\$)?\s?\d+(?:\.\d+)?/g;
+    const fxRe = /^(?:[A-Z]{3}\$?)\s*[\d,]+(?:\.\d+)?$/;
+    const clean = (m) => m.replace(/^\s*\d{4}\b/, " ").replace(/\s+/g, " ").trim().replace(/^[-\u2013\u00b7\u2022|\u25bc\u25b2\s]+|[-\u2013\u00b7\u2022|\u25bc\u25b2\s]+$/g, "");
+    let curDate = "", pend = "";
     for (const raw of text.split(/\r?\n/)) {
-        const line = raw.trim();
+        const line = toHalf(raw).trim();
         if (!line)
             continue;
         const low = line.toLowerCase();
         if (SKIP.some((s) => low.includes(s.toLowerCase())))
             continue;
-        const dm = line.match(dateRe);
-        if (!dm)
+        if (fxRe.test(line))
             continue;
-        let y, mo, d;
-        if (dm[1]) {
-            y = +dm[1];
-            mo = +dm[2];
-            d = +dm[3];
+        const dm = line.match(dateRe);
+        let lineDate = "";
+        if (dm) {
+            let y, mo, d;
+            if (dm[1]) {
+                y = +dm[1];
+                mo = +dm[2];
+                d = +dm[3];
+            }
+            else {
+                y = fallbackYear;
+                mo = +dm[4];
+                d = +dm[5];
+            }
+            if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31)
+                lineDate = `${y}/${pad(mo)}/${pad(d)}`;
+        }
+        const rest = dm ? line.replace(dm[0], " ") : line;
+        const amts = rest.match(amtRe);
+        if (lineDate) {
+            curDate = lineDate;
+            if (amts && amts.length) {
+                const amtTok = amts[amts.length - 1];
+                const amt = parseFloat(amtTok.replace(/[^\d.-]/g, ""));
+                if (isFinite(amt) && amt !== 0) {
+                    const merchant = clean(rest.replace(amtTok, " ")) || pend || "（未填商家）";
+                    out.push({ id: uid(), date: curDate, month: monthOf(curDate), merchant, amount: amt });
+                }
+                pend = "";
+            }
+            else {
+                pend = clean(rest);
+            }
+            continue;
+        }
+        if (amts && amts.length) {
+            if (!curDate)
+                continue;
+            const amtTok = amts[amts.length - 1];
+            const amt = parseFloat(amtTok.replace(/[^\d.-]/g, ""));
+            if (!isFinite(amt) || amt === 0) {
+                pend = "";
+                continue;
+            }
+            const inline = clean(rest.replace(amtTok, " "));
+            const merchant = pend || inline;
+            if (!merchant) {
+                pend = "";
+                continue;
+            }
+            out.push({ id: uid(), date: curDate, month: monthOf(curDate), merchant, amount: amt });
+            pend = "";
         }
         else {
-            y = fallbackYear;
-            mo = +dm[4];
-            d = +dm[5];
+            pend = clean(line);
         }
-        if (mo < 1 || mo > 12 || d < 1 || d > 31)
-            continue;
-        const rest = line.replace(dm[0], " ");
-        const amts = rest.match(amtRe);
-        if (!amts || !amts.length)
-            continue;
-        const amtTok = amts[amts.length - 1];
-        const amt = parseFloat(amtTok.replace(/[^\d.-]/g, ""));
-        if (!isFinite(amt) || amt === 0)
-            continue;
-        let merchant = rest.replace(amtTok, " ").replace(/\s+/g, " ").trim().replace(/^[-–·•|\s]+|[-–·•|\s]+$/g, "");
-        if (!merchant)
-            merchant = "（未填商家）";
-        const date = `${y}/${pad(mo)}/${pad(d)}`;
-        out.push({ id: uid(), date, month: monthOf(date), merchant, amount: amt });
     }
     return out;
 }
