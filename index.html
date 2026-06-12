@@ -952,9 +952,9 @@ function Reconcile({ cards, cardById, tx, setTx, rules, onManage }) {
                                 f.m.merchant || "（未填商家）"),
                             React.createElement("span", { style: { fontVariantNumeric: "tabular-nums" }, className: "shrink-0" }, twd(f.m.amount))),
                         React.createElement("div", { style: { color: C.muted }, className: "text-[11px]" }, reasons(f)))))))),
-                result.stmtOnly.length > 0 && (React.createElement(Bucket, { title: "\u5E33\u55AE\u6709\u3001\u4F60\u6C92\u8A18\u5230 \u2192 \u6703\u88DC\u9032\u4F86", color: C.home }, result.stmtOnly.map((s) => React.createElement(Line, { key: s.id, left: `${s.date.slice(5)} ${s.merchant}${s.installment ? " · 分期" : ""}`, right: twd(s.amount) })))),
-                result.manualOnly.length > 0 && (React.createElement(Bucket, { title: "\u4F60\u8A18\u4E86\u3001\u5E33\u55AE\u6C92\u6709 \u2192 \u6A19\u5F85\u78BA\u8A8D", color: C.loss }, result.manualOnly.map((m) => React.createElement(Line, { key: m.id, left: `${m.date.slice(5)} ${m.merchant || "（未填商家）"}`, right: twd(m.amount) })))),
-                result.strong.length > 0 && (React.createElement(Bucket, { title: "\u5DF2\u5C0D\u4E0A \u2192 \u6A19\u5DF2\u6838\u5C0D,\u4E26\u88DC\u5B50\u5206\u985E", color: C.self }, result.strong.map((x) => React.createElement(Line, { key: x.m.id, left: `${x.s.date.slice(5)} ${x.s.merchant}`, right: twd(x.s.amount) })))),
+                result.stmtOnly.length > 0 && (React.createElement(Bucket, { title: "\u5E33\u55AE\u6709\u3001\u4F60\u6C92\u8A18\u5230 \u2192 \u6703\u88DC\u9032\u4F86", color: C.home }, result.stmtOnly.map((s) => React.createElement(LineRow, { key: s.id, left: `${s.date.slice(5)} ${s.merchant}${s.installment ? " · 分期" : ""}`, right: twd(s.amount) })))),
+                result.manualOnly.length > 0 && (React.createElement(Bucket, { title: "\u4F60\u8A18\u4E86\u3001\u5E33\u55AE\u6C92\u6709 \u2192 \u6A19\u5F85\u78BA\u8A8D", color: C.loss }, result.manualOnly.map((m) => React.createElement(LineRow, { key: m.id, left: `${m.date.slice(5)} ${m.merchant || "（未填商家）"}`, right: twd(m.amount) })))),
+                result.strong.length > 0 && (React.createElement(Bucket, { title: "\u5DF2\u5C0D\u4E0A \u2192 \u6A19\u5DF2\u6838\u5C0D,\u4E26\u88DC\u5B50\u5206\u985E", color: C.self }, result.strong.map((x) => React.createElement(LineRow, { key: x.m.id, left: `${x.s.date.slice(5)} ${x.s.merchant}`, right: twd(x.s.amount) })))),
                 React.createElement("button", { onClick: apply, style: { background: C.act, color: "#fff" }, className: "w-full rounded-lg py-2.5 text-sm font-semibold" }, "\u5957\u7528\u6838\u5C0D\u7D50\u679C")))))));
 }
 function Tally({ n, label, color }) {
@@ -967,7 +967,7 @@ function Bucket({ title, color, children }) {
         React.createElement("div", { style: { color }, className: "text-xs font-semibold mb-1.5" }, title),
         React.createElement("div", { className: "space-y-1" }, children));
 }
-function Line({ left, right }) {
+function LineRow({ left, right }) {
     return React.createElement("div", { className: "flex justify-between text-sm" },
         React.createElement("span", { className: "truncate pr-2" }, left),
         React.createElement("span", { style: { fontVariantNumeric: "tabular-nums" }, className: "font-medium shrink-0" }, right));
