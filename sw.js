@@ -1,5 +1,5 @@
 // ⬇⬇ 改版時把版號 +1（v1 → v2 → v3 …），存檔重新上傳，使用者下次連線就會自動更新
-const CACHE = "fengsheng-v26";
+const CACHE = "fengsheng-v27";
 const SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./icon-180.png"];
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
