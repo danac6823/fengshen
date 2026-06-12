@@ -1,0 +1,16 @@
+{
+  "name": "心中有豐盛，豐盛自來",
+  "short_name": "豐盛記帳",
+  "description": "記帳 · 資產 · 投資 · 保險 · 旅遊",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBF4D9",
+  "theme_color": "#FBF4D9",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
