@@ -35,4 +35,4 @@
 4. repo 上方 **Settings → Pages** → Source 選「Deploy from a branch」→ Branch 選 `main` / `/ (root)` → Save。
 5. 等 1～2 分鐘，網址會是 `https://你的帳號.github.io/fengsheng/`。
 6. 手機開這個網址 →「加入主畫面」即可。（本 App 用相對路徑，放在子目錄也能正常運作。）
-7. 之後要改版：重新上傳 index.html（並把 sw.js 版號 +1）→ Commit，幾分鐘後自動更新。
+7. 之後要改版：重新上傳 index.html（並把 sw.js 版號 +1）→ Commit，幾分鐘後自動更新 。
