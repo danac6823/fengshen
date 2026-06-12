@@ -12,14 +12,18 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="豐盛記帳" />
 <link rel="icon" type="image/png" href="./icon-192.png" />
-<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js" crossorigin></script>
-<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.min.js" crossorigin></script>
-<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  window.__fail = function (name) { if (window.__rendered) return; var b = document.getElementById("boot"); if (b) { b.style.color = "#D77F7E"; b.innerHTML = "元件載入失敗：" + name + "<br>（請截圖給我）"; } };
+  window.addEventListener("error", function (e) { if (window.__rendered) return; var b = document.getElementById("boot"); if (b) { var m = (e && e.error && e.error.message) || (e && e.message) || "未知錯誤"; b.style.color = "#D77F7E"; b.innerHTML = "啟動錯誤：<br>" + m + "<br>（請截圖給我）"; } }, true);
+</script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin onerror="window.__fail('react')"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin onerror="window.__fail('react-dom')"></script>
+<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js" crossorigin onerror="window.__fail('prop-types')"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.min.js" crossorigin onerror="window.__fail('recharts')"></script>
+<script src="https://cdn.tailwindcss.com" onerror="window.__fail('tailwind')"></script>
 <style>
   html, body { margin: 0; background: #FBF4D9; -webkit-tap-highlight-color: transparent; }
-  #boot { font-family: system-ui, "PingFang TC", "Noto Sans TC", sans-serif; color: #8B8770; display:flex; min-height:100vh; align-items:center; justify-content:center; font-size:14px; }
+  #boot { font-family: system-ui, "PingFang TC", "Noto Sans TC", sans-serif; color: #8B8770; display:flex; min-height:100vh; align-items:center; justify-content:center; font-size:14px; text-align:center; padding: 0 24px; line-height: 1.6; }
   @media (display-mode: standalone) { body { padding-top: env(safe-area-inset-top); } }
 </style>
 </head>
@@ -28,7 +32,9 @@
 <script>
 "use strict";
 const { useState, useEffect, useMemo, useRef } = React;
-const { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } = Recharts;
+function __Stub() { return null; }
+const _R = (window.Recharts || {});
+const BarChart = _R.BarChart || __Stub, Bar = _R.Bar || __Stub, LineChart = _R.LineChart || __Stub, Line = _R.Line || __Stub, XAxis = _R.XAxis || __Stub, YAxis = _R.YAxis || __Stub, Tooltip = _R.Tooltip || __Stub, ResponsiveContainer = _R.ResponsiveContainer || __Stub, PieChart = _R.PieChart || __Stub, Pie = _R.Pie || __Stub, Cell = _R.Cell || __Stub;
 /* ---------- 色彩 ---------- */
 const C = {
     paper: "#FBF4D9", ink: "#33433B", card: "#FFFDF4", border: "#ECE3C6", muted: "#8B8770",
@@ -2394,7 +2400,8 @@ function Stat({ label, v, color, muted }) {
         React.createElement("div", { style: { color: color || (muted ? C.muted : C.ink), fontVariantNumeric: "tabular-nums" }, className: "text-lg font-bold" }, v));
 }
 const __root = ReactDOM.createRoot(document.getElementById("root"));
-__root.render(React.createElement(App, null));
+try { __root.render(React.createElement(App, null)); window.__rendered = true; }
+catch (e) { var __b = document.getElementById("boot"); if (__b) { __b.style.color = "#D77F7E"; __b.innerHTML = "啟動錯誤：<br>" + ((e && e.message) || e) + "<br>（請截圖給我）"; } }
 
 </script>
 <script>
