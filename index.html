@@ -494,7 +494,7 @@ function App() {
     if (loading)
         return React.createElement("div", { style: { background: C.paper, color: C.muted }, className: "min-h-screen flex items-center justify-center text-sm" }, "\u8F09\u5165\u4E2D\u2026");
     const NAV = [["record", "記帳"], ["reconcile", "核對"], ["analyze", "分析"], ["invest", "資產"], ["stock", "投資"], ["trip", "旅遊"]];
-    return (React.createElement("div", { style: { background: C.paper, color: C.ink, fontFamily: '"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif' }, className: "min-h-screen pb-24 md:pb-8" },
+    return (React.createElement("div", { style: { background: C.paper, color: C.ink, fontFamily: '"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif' }, className: "min-h-screen pb-28 md:pb-8" },
         React.createElement("div", { className: "max-w-3xl mx-auto px-5 py-6" },
             React.createElement("header", { className: "flex items-center justify-between mb-4" },
                 React.createElement("div", null,
@@ -517,9 +517,9 @@ function App() {
                 hasStore ? "資料已自動存檔・綁定你的帳號" : "（此預覽不支援存檔,重整會清空）",
                 React.createElement("br", null),
                 "\u50C5\u4F9B\u8A18\u5E33\u53C3\u8003,\u975E\u6295\u8CC7\u5EFA\u8B70\u3002")),
-        React.createElement("nav", { className: "md:hidden fixed bottom-0 inset-x-0 flex", style: { background: C.card, borderTop: `1px solid ${C.border}` } }, NAV.map(([k, l]) => (React.createElement("button", { key: k, onClick: () => setView(k), style: { color: view === k ? C.act : C.muted }, className: "flex-1 py-2.5 text-xs font-semibold" },
+        React.createElement("nav", { className: "md:hidden fixed bottom-0 inset-x-0 flex", style: { background: C.card, borderTop: `1px solid ${C.border}`, paddingBottom: "env(safe-area-inset-bottom)" } }, NAV.map(([k, l]) => (React.createElement("button", { key: k, onClick: () => setView(k), style: { color: view === k ? C.act : C.muted }, className: "flex-1 py-3.5 text-[13px] font-semibold" },
             l,
-            view === k && React.createElement("div", { className: "h-0.5 mt-1 mx-auto w-6 rounded", style: { background: C.act } }))))),
+            view === k && React.createElement("div", { className: "h-0.5 mt-1.5 mx-auto w-7 rounded", style: { background: C.act } }))))),
         cardModal && React.createElement(CardsModal, { cards: cards, setCards: setCards, tx: tx, onClose: () => setCardModal(false) })));
 }
 /* ---------- 繳款提醒 ---------- */
@@ -624,6 +624,12 @@ function ScanInvoice({ cards, defaultCard, rules, onAdd, onClose }) {
     const [date, setDate] = useState("");
     const [imgErr, setImgErr] = useState("");
     const canImg = typeof window !== "undefined" && "BarcodeDetector" in window;
+    const [camOn, setCamOn] = useState(false);
+    const [camErr, setCamErr] = useState("");
+    const videoRef = useRef(null);
+    const streamRef = useRef(null);
+    const rafRef = useRef(0);
+    const foundRef = useRef({ L: "", R: "" });
     function applyParsed(p) {
         if (!p || p.error) {
             setRes(p || { error: "BAD" });
@@ -637,6 +643,70 @@ function ScanInvoice({ cards, defaultCard, rules, onAdd, onClose }) {
         setCat(cl.category === "未分類" ? null : cl.category);
     }
     function doParse() { applyParsed(parseInvoiceQR(raw)); }
+    function stopCam() {
+        cancelAnimationFrame(rafRef.current);
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach((t) => t.stop());
+            streamRef.current = null;
+        }
+        setCamOn(false);
+    }
+    async function startCam() {
+        setCamErr("");
+        try {
+            if (!window.jsQR)
+                await loadScript("https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js");
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            streamRef.current = stream;
+            foundRef.current = { L: "", R: "" };
+            setCamOn(true);
+            const v = videoRef.current;
+            if (v) {
+                v.srcObject = stream;
+                v.setAttribute("playsinline", "true");
+                try {
+                    await v.play();
+                }
+                catch (e) { }
+            }
+            const cv = document.createElement("canvas");
+            const tick = () => {
+                const vid = videoRef.current;
+                if (vid && vid.readyState >= 2 && window.jsQR && vid.videoWidth) {
+                    cv.width = vid.videoWidth;
+                    cv.height = vid.videoHeight;
+                    const ctx = cv.getContext("2d");
+                    ctx.drawImage(vid, 0, 0, cv.width, cv.height);
+                    const img = ctx.getImageData(0, 0, cv.width, cv.height);
+                    const code = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+                    if (code && code.data) {
+                        const d = code.data;
+                        if (d.indexOf("**") === 0)
+                            foundRef.current.R = d;
+                        else
+                            foundRef.current.L = d;
+                        if (foundRef.current.L) {
+                            const combined = foundRef.current.L + (foundRef.current.R ? " " + foundRef.current.R : "");
+                            const p = parseInvoiceQR(combined);
+                            if (p && !p.error) {
+                                setRaw(combined);
+                                applyParsed(p);
+                                stopCam();
+                                return;
+                            }
+                        }
+                    }
+                }
+                rafRef.current = requestAnimationFrame(tick);
+            };
+            rafRef.current = requestAnimationFrame(tick);
+        }
+        catch (err) {
+            setCamErr("無法開啟相機，請允許相機權限，或改用下方貼上。");
+            stopCam();
+        }
+    }
+    useEffect(() => () => stopCam(), []);
     async function onFile(e) {
         setImgErr("");
         const f = e.target.files && e.target.files[0];
@@ -675,13 +745,19 @@ function ScanInvoice({ cards, defaultCard, rules, onAdd, onClose }) {
             React.createElement("div", { className: "flex items-center justify-between mb-3" },
                 React.createElement("h2", { className: "text-lg font-bold" }, "\u6383\u767C\u7968 QR"),
                 React.createElement("button", { onClick: onClose, style: { color: C.muted }, className: "text-sm" }, "\u95DC\u9589")),
+            camOn ? (React.createElement("div", { className: "mb-3" },
+                React.createElement("div", { className: "relative rounded-xl overflow-hidden", style: { background: "#000" } },
+                    React.createElement("video", { ref: videoRef, className: "w-full", style: { maxHeight: "52vh", objectFit: "cover", display: "block" }, muted: true, playsInline: true, autoPlay: true }),
+                    React.createElement("div", { className: "absolute inset-0 flex items-center justify-center", style: { pointerEvents: "none" } },
+                        React.createElement("div", { style: { width: "64%", aspectRatio: "1 / 1", border: "3px solid rgba(255,255,255,0.92)", borderRadius: 14 } }))),
+                React.createElement("p", { style: { color: C.muted }, className: "text-[11px] mt-2 text-center" }, "\u628A\u767C\u7968\u300C\u5DE6\u908A\u300D\u90A3\u500B QR \u5C0D\u6E96\u767D\u6846\uFF0C\u6703\u81EA\u52D5\u5E36\u5165"),
+                React.createElement("button", { onClick: stopCam, style: { background: C.card, color: C.ink, border: `1px solid ${C.border}` }, className: "w-full rounded-lg py-2 text-sm font-semibold mt-2" }, "\u505C\u6B62\u76F8\u6A5F"))) : (React.createElement("button", { onClick: startCam, style: { background: C.act, color: "#fff" }, className: "w-full rounded-xl py-3 text-sm font-semibold flex items-center justify-center mb-2" }, "\u7528\u76F8\u6A5F\u6383\u63CF")),
+            camErr && React.createElement("p", { style: { color: C.loss }, className: "text-xs mb-2" }, camErr),
             canImg && (React.createElement("label", { style: { background: C.act, color: "#fff" }, className: "w-full rounded-xl py-2.5 text-sm font-semibold flex items-center justify-center mb-2 cursor-pointer" },
                 "\u4E0A\u50B3\u767C\u7968\u7167\u7247",
                 React.createElement("input", { type: "file", accept: "image/*", capture: "environment", onChange: onFile, className: "hidden" }))),
             imgErr && React.createElement("p", { style: { color: C.loss }, className: "text-xs mb-2" }, imgErr),
-            React.createElement("p", { style: { color: C.muted }, className: "text-[11px] mb-1" },
-                canImg ? "或" : "",
-                "\u7528\u624B\u6A5F\u76F8\u6A5F/\u767C\u7968 App \u6383\u5DE6\u908A\u90A3\u500B QR,\u628A\u5167\u5BB9\u8CBC\u9032\u4F86:"),
+            React.createElement("p", { style: { color: C.muted }, className: "text-[11px] mb-1" }, "\u6216\u624B\u52D5\u8CBC\u4E0A QR \u5167\u5BB9\uFF08\u542B\u767C\u7968\u865F\u78BC\u7684\u300C\u5DE6\u908A\u300D\u90A3\u500B\uFF09:"),
             React.createElement("textarea", { value: raw, onChange: (e) => setRaw(e.target.value), rows: 3, placeholder: "\u8CBC\u4E0A\u767C\u7968 QR \u5167\u5BB9\uFF08\u542B\u767C\u7968\u865F\u78BC\u90A3\u500B\uFF09", style: { background: C.card, border: `1px solid ${C.border}`, color: C.ink }, className: "w-full rounded-lg p-2.5 text-xs font-mono resize-y" }),
             React.createElement("button", { onClick: doParse, disabled: !raw.trim(), style: { background: C.self, color: "#fff", opacity: raw.trim() ? 1 : 0.4 }, className: "w-full rounded-lg py-2 text-sm font-semibold mt-2" }, "\u89E3\u6790"),
             res && res.error && React.createElement("p", { style: { color: C.loss }, className: "text-sm mt-3" }, res.error === "RIGHT_ONLY" ? "這是右邊那個 QR,請掃含發票號碼的左邊 QR。" : "看起來不是發票 QR,請確認內容。"),
