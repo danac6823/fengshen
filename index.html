@@ -94,7 +94,7 @@ const twd = (n) => new Intl.NumberFormat("zh-TW", { style: "currency", currency:
 const pct = (n) => `${(n * 100).toFixed(0)}%`;
 const numv = (x) => { const n = parseFloat(String(x == null ? "" : x).replace(/[,\s]/g, "")); return isFinite(n) ? n : 0; };
 const bizPortion = (t) => (t && t.biz) ? ((t.bizAmt != null && t.bizAmt !== "") ? numv(t.bizAmt) : numv(t.amount)) : 0;
-const APP_VERSION = "V3";
+const APP_VERSION = "V4";
 const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = (n) => String(n).padStart(2, "0");
 const dstr = (d) => `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
@@ -117,7 +117,15 @@ function recurringInfo(tx) {
         const avg = amts.reduce((a, b) => a + b, 0) / amts.length;
         const dev = amts.length > 1 ? Math.max(...amts.map((a) => Math.abs(a - avg))) / (avg || 1) : 1;
         const isRecurring = months.size >= 2;
-        info[key] = { key, monthsCount: months.size, avg, isRecurring, isSubscription: isRecurring && dev <= 0.05, category: list[0].category };
+        const dayCnt = {};
+        for (const t of list) {
+            const d = +((t.date || "").split(/[/-]/)[2]) || 0;
+            if (d)
+                dayCnt[d] = (dayCnt[d] || 0) + 1;
+        }
+        const typicalDay = +((Object.entries(dayCnt).sort((a, b) => b[1] - a[1])[0]) || [0])[0] || 0;
+        const lastMonth = Array.from(months).sort().pop() || "";
+        info[key] = { key, monthsCount: months.size, avg, isRecurring, isSubscription: isRecurring && dev <= 0.05, category: list[0].category, typicalDay, lastMonth };
     }
     return info;
 }
@@ -174,6 +182,14 @@ function classify(merchant, rules) {
     for (const r of (rules || []))
         if (r.key && m.includes(r.key.toLowerCase()))
             return { category: r.category, sub: r.sub || null };
+    const _norm = (x) => (x || "").toLowerCase().replace(/[\s\-·•|()（）]/g, "");
+    const p3 = _norm(merchant).slice(0, 3);
+    if (p3.length >= 3)
+        for (const r of (rules || [])) {
+            const rn = _norm(r.name || r.key);
+            if (rn.length >= 3 && rn.slice(0, 3) === p3)
+                return { category: r.category, sub: r.sub || null };
+        }
     for (const e of SUBKW)
         if (e.k.some((k) => m.includes(k.toLowerCase())))
             return { category: e.p, sub: e.s };
@@ -409,7 +425,7 @@ async function sset(k, v) { try {
     localStorage.setItem(k, JSON.stringify(v));
 }
 catch { } }
-const K = { tx: "sanfen:tx", rules: "sanfen:rules", inv: "sanfen:inv", cards: "sanfen:cards", budgets: "sanfen:budgets", fixed: "sanfen:fixed", income: "sanfen:income", assets: "sanfen:assets", liab: "sanfen:liab", activity: "sanfen:activity", reminder: "sanfen:reminder", trips: "sanfen:trips", plans: "sanfen:plans", cash: "sanfen:cash", snap: "sanfen:snap", policy: "sanfen:policy", retire: "sanfen:retire", tripsOn: "sanfen:tripson", reconOn: "sanfen:reconon" };
+const K = { tx: "sanfen:tx", rules: "sanfen:rules", inv: "sanfen:inv", cards: "sanfen:cards", budgets: "sanfen:budgets", fixed: "sanfen:fixed", income: "sanfen:income", assets: "sanfen:assets", liab: "sanfen:liab", activity: "sanfen:activity", reminder: "sanfen:reminder", trips: "sanfen:trips", plans: "sanfen:plans", cash: "sanfen:cash", snap: "sanfen:snap", policy: "sanfen:policy", retire: "sanfen:retire", tripsOn: "sanfen:tripson", reconOn: "sanfen:reconon", backup: "sanfen:backup", lastcard: "sanfen:lastcard" };
 const SAMPLE = `2025/05/02  好市多 COSTCO            3,890
 2025/05/06  誠品書店                  680
 2025/05/09  毛小孩動物醫院 預防針     1,800
@@ -437,10 +453,19 @@ function App() {
     const [loading, setLoading] = useState(true);
     const [view, setView] = useState(() => (typeof window !== "undefined" && window.innerWidth >= 768 ? "analyze" : "record"));
     const [cardModal, setCardModal] = useState(false);
+    const [rulesModal, setRulesModal] = useState(false);
+    const [settingsModal, setSettingsModal] = useState(false);
+    const [focusUncat, setFocusUncat] = useState(false);
     const [priv, setPriv] = useState(true);
     const [retire, setRetire] = useState(BLANK_RETIRE);
     const [tripsOn, setTripsOn] = useState(true);
     const [reconOn, setReconOn] = useState(true);
+    const [lastBackup, setLastBackup] = useState(0);
+    const [lastCard, setLastCard] = useState(null);
+    const [toast, setToast] = useState(null);
+    const toastRef = useRef(null);
+    const showToast = (msg, label, fn) => { setToast({ msg, label, fn }); if (toastRef.current)
+        clearTimeout(toastRef.current); toastRef.current = setTimeout(() => setToast(null), 5000); };
     useEffect(() => {
         (async () => {
             let cds = [], txs = [], rls = [], ivs = [];
@@ -460,7 +485,7 @@ function App() {
                     setAssets(j2);
                 if (k2)
                     setLiabilities(k2);
-                const [m2, n2, p2, q2, r2, s2, t2, u2, v2, w2] = await Promise.all([sget(K.activity), sget(K.reminder), sget(K.trips), sget(K.plans), sget(K.cash), sget(K.snap), sget(K.policy), sget(K.retire), sget(K.tripsOn), sget(K.reconOn)]);
+                const [m2, n2, p2, q2, r2, s2, t2, u2, v2, w2, x2, y2] = await Promise.all([sget(K.activity), sget(K.reminder), sget(K.trips), sget(K.plans), sget(K.cash), sget(K.snap), sget(K.policy), sget(K.retire), sget(K.tripsOn), sget(K.reconOn), sget(K.backup), sget(K.lastcard)]);
                 if (m2)
                     setActivity(m2);
                 if (n2 != null)
@@ -481,6 +506,10 @@ function App() {
                     setTripsOn(v2);
                 if (w2 != null)
                     setReconOn(w2);
+                if (x2 != null)
+                    setLastBackup(x2);
+                if (y2 != null)
+                    setLastCard(y2);
             }
             if (!cds.length)
                 cds = [
@@ -553,11 +582,16 @@ function App() {
         sset(K.tripsOn, tripsOn); }, [tripsOn, loading]);
     useEffect(() => { if (!loading && hasStore)
         sset(K.reconOn, reconOn); }, [reconOn, loading]);
+    useEffect(() => { if (!loading && hasStore && lastBackup)
+        sset(K.backup, lastBackup); }, [lastBackup, loading]);
+    useEffect(() => { if (!loading && hasStore && lastCard)
+        sset(K.lastcard, lastCard); }, [lastCard, loading]);
     const cardById = useMemo(() => Object.fromEntries(cards.map((c) => [c.id, c])), [cards]);
     function learn(merchant, cat, sub) {
-        const key = (merchant || "").slice(0, 4);
+        const mm = (merchant || "").trim();
+        const key = mm.slice(0, 4);
         if (key && sub)
-            setRules((p) => [{ key, category: cat, sub }, ...p.filter((r) => r.key !== key)].slice(0, 300));
+            setRules((p) => [{ key, category: cat, sub, name: mm }, ...p.filter((r) => r.key !== key)].slice(0, 300));
     }
     const markActive = () => setActivity((p) => (p.includes(todayStr()) ? p : [...p, todayStr()].slice(-400)));
     const upsertCardTx = (existingId, d) => {
@@ -579,7 +613,7 @@ function App() {
         const v = await sget(k);
         if (v != null)
             o[k] = v;
-    } const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(o)], { type: "application/json" })); a.download = "sanfen-backup.json"; a.click(); }
+    } const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(o)], { type: "application/json" })); a.download = "sanfen-backup.json"; a.click(); setLastBackup(Date.now()); }
     function importData(e) { const f = e.target.files && e.target.files[0]; if (!f)
         return; const rd = new FileReader(); rd.onload = async () => { try {
         const o = JSON.parse(rd.result);
@@ -611,6 +645,8 @@ function App() {
     if (loading)
         return React.createElement("div", { style: { background: C.paper, color: C.muted }, className: "min-h-screen flex items-center justify-center text-sm" }, "\u8F09\u5165\u4E2D\u2026");
     const NAV = [["record", "記帳"], ...(reconOn ? [["reconcile", "核對"]] : []), ["analyze", "分析"], ["invest", "資產"], ["stock", "投資"], ...(tripsOn ? [["trip", "旅遊"]] : [])];
+    const backupDays = lastBackup ? Math.floor((Date.now() - lastBackup) / 86400000) : null;
+    const backupOverdue = tx.length >= 5 && (lastBackup === 0 || backupDays >= 14);
     return (React.createElement("div", { style: { background: C.paper, color: C.ink, fontFamily: '"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif' }, className: "h-[100dvh] md:h-auto md:min-h-screen flex flex-col md:block" },
         React.createElement("div", { className: "flex-1 min-h-0 overflow-y-auto md:overflow-visible" },
             React.createElement("div", { className: "max-w-3xl mx-auto px-5 py-6" },
@@ -618,41 +654,73 @@ function App() {
                     React.createElement("div", null,
                         React.createElement("h1", { className: "text-xl font-extrabold tracking-tight" }, "\u5FC3\u4E2D\u6709\u8C50\u76DB\uFF0C\u8C50\u76DB\u81EA\u4F86"),
                         React.createElement("p", { style: { color: C.muted }, className: "text-[11px]" }, "\u8A18\u5E33 \u00B7 \u8CC7\u7522 \u00B7 \u6295\u8CC7 \u00B7 \u4FDD\u96AA \u00B7 \u65C5\u904A")),
-                    React.createElement("nav", { className: "hidden md:flex rounded-full p-0.5", style: { background: C.card, border: `1px solid ${C.border}` } }, NAV.map(([k, l]) => (React.createElement("button", { key: k, onClick: () => setView(k), style: { background: view === k ? C.act : "transparent", color: view === k ? C.paper : C.muted }, className: "px-4 py-1.5 rounded-full text-sm font-medium transition-colors" }, l))))),
+                    React.createElement("div", { className: "flex items-center gap-2" },
+                        React.createElement("nav", { className: "hidden md:flex rounded-full p-0.5", style: { background: C.card, border: `1px solid ${C.border}` } }, NAV.map(([k, l]) => (React.createElement("button", { key: k, onClick: () => setView(k), style: { background: view === k ? C.act : "transparent", color: view === k ? C.paper : C.muted }, className: "px-4 py-1.5 rounded-full text-sm font-medium transition-colors" }, l)))),
+                        React.createElement("button", { onClick: () => setSettingsModal(true), "aria-label": "\u8A2D\u5B9A", style: { color: C.muted, background: C.card, border: `1px solid ${C.border}` }, className: "w-9 h-9 rounded-full flex items-center justify-center shrink-0 relative" },
+                            React.createElement("svg", { width: "18", height: "18", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
+                                React.createElement("circle", { cx: "12", cy: "12", r: "3" }),
+                                React.createElement("path", { d: "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" })),
+                            backupOverdue && React.createElement("span", { style: { position: "absolute", top: -1, right: -1, width: 9, height: 9, borderRadius: 999, background: C.loss, border: `2px solid ${C.paper}` } })))),
                 React.createElement(Reminders, { cards: cards, tx: tx, budgets: budgets, activity: activity, view: view, policies: policies }),
                 React.createElement(ErrorBoundary, { key: view },
-                    view === "record" && React.createElement(Record, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, rules: rules, learn: learn, onManage: () => setCardModal(true), markActive: markActive, activity: activity, reminderTime: reminderTime, setReminderTime: setReminderTime }),
-                    view === "reconcile" && React.createElement(Reconcile, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, rules: rules, onManage: () => setCardModal(true) }),
-                    view === "analyze" && React.createElement(Analyze, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, learn: learn, budgets: budgets, setBudgets: setBudgets, fixedOverride: fixedOverride, setFixedOverride: setFixedOverride }),
+                    view === "record" && React.createElement(Record, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, rules: rules, learn: learn, onManage: () => setCardModal(true), markActive: markActive, activity: activity, reminderTime: reminderTime, setReminderTime: setReminderTime, showToast: showToast, defaultCard: lastCard, onCardUse: setLastCard }),
+                    view === "reconcile" && React.createElement(Reconcile, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, rules: rules, onManage: () => setCardModal(true), showToast: showToast, onGoCategorize: () => { setFocusUncat(true); setView("analyze"); } }),
+                    view === "analyze" && React.createElement(Analyze, { cards: cards, cardById: cardById, tx: tx, setTx: setTx, learn: learn, budgets: budgets, setBudgets: setBudgets, fixedOverride: fixedOverride, setFixedOverride: setFixedOverride, showToast: showToast, focusUncat: focusUncat, onFocusUncatDone: () => setFocusUncat(false) }),
                     view === "invest" && React.createElement(Wealth, { inv: inv, setInv: setInv, income: income, setIncome: setIncome, assets: assets, setAssets: setAssets, liabilities: liabilities, setLiabilities: setLiabilities, tx: tx, trips: trips, cash: cash, snaps: snaps, setSnaps: setSnaps, policies: policies, setPolicies: setPolicies, cards: cards, setCards: setCards, retire: retire, setRetire: setRetire, tripsOn: tripsOn, priv: priv, setPriv: setPriv }),
                     view === "stock" && React.createElement(Invest, { inv: inv, setInv: setInv, plans: plans, setPlans: setPlans, cash: cash, setCash: setCash, priv: priv, setPriv: setPriv }),
                     view === "trip" && React.createElement(Trips, { trips: trips, setTrips: setTrips, cards: cards, upsertCardTx: upsertCardTx, removeCardTx: removeCardTx, postSplitPay: postSplitPay })),
-                React.createElement("div", { className: "flex flex-wrap items-center justify-center gap-1.5 mt-6 text-xs" },
-                    React.createElement("span", { style: { color: C.muted }, className: "mr-0.5" }, "\u986F\u793A"),
-                    React.createElement("button", { onClick: () => { const nv = !reconOn; setReconOn(nv); if (!nv && view === "reconcile")
-                            setView(typeof window !== "undefined" && window.innerWidth >= 768 ? "analyze" : "record"); }, style: { background: reconOn ? C.self : "transparent", color: reconOn ? "#fff" : C.muted, border: `1px solid ${reconOn ? C.self : C.border}` }, className: "px-3 py-1.5 rounded-full font-medium" },
-                        reconOn ? "✓ " : "",
-                        "\u6838\u5C0D"),
-                    React.createElement("button", { onClick: () => { const nv = !tripsOn; setTripsOn(nv); if (!nv && view === "trip")
-                            setView(typeof window !== "undefined" && window.innerWidth >= 768 ? "analyze" : "record"); }, style: { background: tripsOn ? C.self : "transparent", color: tripsOn ? "#fff" : C.muted, border: `1px solid ${tripsOn ? C.self : C.border}` }, className: "px-3 py-1.5 rounded-full font-medium" },
-                        tripsOn ? "✓ " : "",
-                        "\u65C5\u904A\u5206\u5E33"),
-                    React.createElement("button", { onClick: () => setRetire((p) => ({ ...p, enabled: !p.enabled })), style: { background: retire.enabled ? C.self : "transparent", color: retire.enabled ? "#fff" : C.muted, border: `1px solid ${retire.enabled ? C.self : C.border}` }, className: "px-3 py-1.5 rounded-full font-medium" },
-                        retire.enabled ? "✓ " : "",
-                        "\u9000\u4F11\u91D1")),
-                React.createElement("div", { className: "flex gap-2 justify-center mt-3 text-xs" },
-                    React.createElement("button", { onClick: exportData, style: { color: C.muted, border: `1px solid ${C.border}` }, className: "px-3 py-1 rounded-full" }, "\u532F\u51FA\u5099\u4EFD"),
-                    React.createElement("label", { style: { color: C.muted, border: `1px solid ${C.border}` }, className: "px-3 py-1 rounded-full cursor-pointer" },
-                        "\u532F\u5165\u5099\u4EFD",
-                        React.createElement("input", { type: "file", accept: "application/json", onChange: importData, className: "hidden" }))),
-                React.createElement("footer", { style: { color: C.muted }, className: "text-[11px] text-center mt-2 leading-relaxed" },
-                    hasStore ? "已自動存檔・綁定帳號" : "（預覽不支援存檔）",
-                    " \u00B7 \u50C5\u4F9B\u53C3\u8003,\u975E\u6295\u8CC7\u5EFA\u8B70 \u00B7 ",
+                React.createElement("footer", { style: { color: C.muted }, className: "text-[11px] text-center mt-8 leading-relaxed" },
+                    React.createElement("button", { onClick: () => setSettingsModal(true), style: { color: C.muted, textDecoration: "underline" } }, "\u8A2D\u5B9A"),
+                    " \u00B7 ",
+                    hasStore ? "已自動存檔" : "（預覽不支援存檔）",
+                    " \u00B7 \u50C5\u4F9B\u53C3\u8003 \u00B7 ",
                     React.createElement("span", { style: { opacity: 0.7 } }, APP_VERSION)))),
         React.createElement("nav", { className: "md:hidden shrink-0 flex", style: { background: C.card, borderTop: `1px solid ${C.border}`, paddingBottom: "env(safe-area-inset-bottom)" } }, NAV.map(([k, l]) => (React.createElement("button", { key: k, onClick: () => setView(k), style: { color: view === k ? C.act : C.muted }, className: "flex-1 py-3.5 text-[13px] font-semibold" },
             l,
             view === k && React.createElement("div", { className: "h-0.5 mt-1.5 mx-auto w-7 rounded", style: { background: C.act } }))))),
-        cardModal && React.createElement(CardsModal, { cards: cards, setCards: setCards, tx: tx, assets: assets, onClose: () => setCardModal(false) })));
+        toast && (React.createElement("div", { style: { position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "calc(env(safe-area-inset-bottom) + 76px)", zIndex: 60, maxWidth: "calc(100vw - 32px)" }, className: "flex items-center gap-3 rounded-full shadow-lg px-4 py-2.5" },
+            React.createElement("div", { style: { position: "absolute", inset: 0, background: C.ink, opacity: 0.95, borderRadius: 999 } }),
+            React.createElement("span", { style: { color: "#fff", position: "relative" }, className: "text-sm truncate" }, toast.msg),
+            toast.fn && React.createElement("button", { onClick: () => { toast.fn(); setToast(null); }, style: { color: "#FBD9A8", position: "relative" }, className: "text-sm font-bold shrink-0" }, toast.label || "復原"),
+            React.createElement("button", { onClick: () => setToast(null), style: { color: "#fff", opacity: 0.6, position: "relative" }, className: "text-sm shrink-0" }, "\u2715"))),
+        settingsModal && (React.createElement("div", { className: "fixed inset-0 z-50 flex items-end md:items-center justify-center", style: { background: "rgba(38,52,45,0.42)" }, onClick: () => setSettingsModal(false) },
+            React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-full md:max-w-lg max-h-[85vh] overflow-y-auto rounded-t-2xl md:rounded-2xl p-5" },
+                React.createElement("div", { className: "flex items-center justify-between mb-4" },
+                    React.createElement("h2", { className: "text-lg font-bold" }, "\u8A2D\u5B9A"),
+                    React.createElement("button", { onClick: () => setSettingsModal(false), style: { color: C.muted }, className: "text-sm" }, "\u5B8C\u6210")),
+                React.createElement("div", { className: "mb-5" },
+                    React.createElement("div", { style: { color: C.muted }, className: "text-xs mb-2" }, "\u986F\u793A\u5206\u9801"),
+                    React.createElement("div", { className: "flex flex-wrap gap-1.5 text-xs" },
+                        React.createElement("button", { onClick: () => { const nv = !reconOn; setReconOn(nv); if (!nv && view === "reconcile")
+                                setView("record"); }, style: { background: reconOn ? C.self : "transparent", color: reconOn ? "#fff" : C.muted, border: `1px solid ${reconOn ? C.self : C.border}` }, className: "px-3 py-1.5 rounded-full font-medium" },
+                            reconOn ? "✓ " : "",
+                            "\u6838\u5C0D"),
+                        React.createElement("button", { onClick: () => { const nv = !tripsOn; setTripsOn(nv); if (!nv && view === "trip")
+                                setView("record"); }, style: { background: tripsOn ? C.self : "transparent", color: tripsOn ? "#fff" : C.muted, border: `1px solid ${tripsOn ? C.self : C.border}` }, className: "px-3 py-1.5 rounded-full font-medium" },
+                            tripsOn ? "✓ " : "",
+                            "\u65C5\u904A\u5206\u5E33"),
+                        React.createElement("button", { onClick: () => setRetire((p) => ({ ...p, enabled: !p.enabled })), style: { background: retire.enabled ? C.self : "transparent", color: retire.enabled ? "#fff" : C.muted, border: `1px solid ${retire.enabled ? C.self : C.border}` }, className: "px-3 py-1.5 rounded-full font-medium" },
+                            retire.enabled ? "✓ " : "",
+                            "\u9000\u4F11\u91D1"))),
+                React.createElement("div", { className: "mb-5" },
+                    React.createElement("div", { style: { color: C.muted }, className: "text-xs mb-2" }, "\u8CC7\u6599"),
+                    backupOverdue ? (React.createElement("div", { onClick: () => { exportData(); }, style: { background: C.card, border: `1px solid ${C.loss}`, color: C.loss, cursor: "pointer" }, className: "rounded-lg px-3 py-2 text-xs font-semibold mb-2" }, lastBackup === 0 ? "還沒備份過資料,點此立即匯出備份" : `已 ${backupDays} 天沒備份,建議點此匯出`)) : lastBackup ? (React.createElement("div", { style: { color: C.muted }, className: "text-[11px] mb-2" },
+                        "\u4E0A\u6B21\u5099\u4EFD:",
+                        backupDays === 0 ? "今天" : `${backupDays} 天前`)) : null,
+                    React.createElement("div", { className: "flex flex-wrap gap-2 text-xs" },
+                        React.createElement("button", { onClick: exportData, style: { color: C.ink, border: `1px solid ${C.border}`, background: C.card }, className: "px-3 py-1.5 rounded-full font-medium" }, "\u532F\u51FA\u5099\u4EFD"),
+                        React.createElement("label", { style: { color: C.ink, border: `1px solid ${C.border}`, background: C.card }, className: "px-3 py-1.5 rounded-full cursor-pointer font-medium" },
+                            "\u532F\u5165\u5099\u4EFD",
+                            React.createElement("input", { type: "file", accept: "application/json", onChange: importData, className: "hidden" })),
+                        React.createElement("button", { onClick: () => { setSettingsModal(false); setRulesModal(true); }, style: { color: C.ink, border: `1px solid ${C.border}`, background: C.card }, className: "px-3 py-1.5 rounded-full font-medium" }, "\u5206\u985E\u8A18\u61B6"),
+                        React.createElement("button", { onClick: () => { setSettingsModal(false); setCardModal(true); }, style: { color: C.ink, border: `1px solid ${C.border}`, background: C.card }, className: "px-3 py-1.5 rounded-full font-medium" }, "\u652F\u4ED8\u65B9\u5F0F")),
+                    React.createElement("p", { style: { color: C.muted }, className: "text-[11px] mt-2 leading-relaxed" }, "\u8CC7\u6599\u53EA\u5B58\u5728\u9019\u53F0\u88DD\u7F6E\u3002\u63DB\u624B\u6A5F\u6216\u6E05\u8CC7\u6599\u524D,\u8A18\u5F97\u5148\u300C\u532F\u51FA\u5099\u4EFD\u300D\u3002")),
+                React.createElement("footer", { style: { color: C.muted }, className: "text-[11px] text-center leading-relaxed border-t pt-3" },
+                    hasStore ? "已自動存檔・綁定帳號" : "（預覽不支援存檔）",
+                    " \u00B7 \u50C5\u4F9B\u53C3\u8003,\u975E\u6295\u8CC7\u5EFA\u8B70 \u00B7 \u7248\u672C ",
+                    APP_VERSION)))),
+        cardModal && React.createElement(CardsModal, { cards: cards, setCards: setCards, tx: tx, assets: assets, onClose: () => setCardModal(false) }),
+        rulesModal && React.createElement(RulesModal, { rules: rules, setRules: setRules, onClose: () => setRulesModal(false) })));
 }
 /* ---------- 繳款提醒 ---------- */
 class ErrorBoundary extends React.Component {
@@ -720,12 +788,23 @@ function Reminders({ cards, tx, budgets = {}, activity = [], view, policies = []
         else if (r >= 0.8)
             banners.push({ id: "bud-" + k, color: C.home, text: `${label} 已用 ${pct(r)} 預算`, right: `${twd(sp[k])} / ${twd(b)}` });
     }
+    const recs = recurringInfo(tx);
+    const cmM = monthOf(todayStr());
+    for (const v of Object.values(recs)) {
+        if (!v.isSubscription || !v.typicalDay || v.lastMonth === cmM)
+            continue;
+        const now = new Date();
+        const next = new Date(now.getFullYear(), now.getMonth(), Math.min(v.typicalDay, 28));
+        const dleft = daysUntil(next);
+        if (dleft >= 0 && dleft <= 5)
+            banners.push({ id: "sub-" + v.key, color: C.act, text: `訂閱 ${v.key} · 約 ${next.getMonth() + 1}/${next.getDate()} 扣款`, right: `約 ${twd(Math.round(v.avg))}` });
+    }
     const list = view === "record" ? banners.filter((b) => b.id !== "streak") : banners;
     if (!list.length)
         return null;
-    return (React.createElement("div", { className: "space-y-1.5 mb-3" }, list.map((bn) => (React.createElement("div", { key: bn.id, style: { background: C.card, border: `1px solid ${C.border}`, borderLeft: `3px solid ${bn.color}` }, className: "rounded-lg px-3 py-1.5 text-xs flex items-center gap-2" },
+    return (React.createElement("div", { className: "space-y-1.5 mb-3" }, list.map((bn) => (React.createElement("div", { key: bn.id, onClick: bn.onClick, style: { background: C.card, border: `1px solid ${C.border}`, borderLeft: `3px solid ${bn.color}`, cursor: bn.onClick ? "pointer" : "default" }, className: "rounded-lg px-3 py-1.5 text-xs flex items-center gap-2" },
         React.createElement("span", { className: "font-semibold", style: { color: bn.danger ? C.loss : C.ink } }, bn.text),
-        bn.right && React.createElement("span", { style: { color: C.muted, fontVariantNumeric: "tabular-nums" }, className: "ml-auto" }, bn.right))))));
+        bn.right && React.createElement("span", { style: { color: bn.onClick ? C.act : C.muted, fontVariantNumeric: "tabular-nums" }, className: "ml-auto font-semibold" }, bn.right))))));
 }
 /* ---------- 卡片選擇列 ---------- */
 function CardChips({ cards, value, onChange, onManage, allowAll }) {
@@ -930,10 +1009,10 @@ function ScanInvoice({ cards, defaultCard, rules, onAdd, onClose }) {
                 React.createElement("button", { onClick: add, disabled: !parseInt(amount || "0", 10) || !cat, style: { background: (!parseInt(amount || "0", 10) || !cat) ? C.border : C.act, color: "#fff" }, className: "w-full rounded-lg py-2.5 text-sm font-semibold" }, "\u52A0\u5165"))))));
 }
 /* ================= 記帳（手機主介面） ================= */
-function Record({ cards, cardById, tx, setTx, rules, learn, onManage, markActive, activity, reminderTime, setReminderTime }) {
+function Record({ cards, cardById, tx, setTx, rules, learn, onManage, markActive, activity, reminderTime, setReminderTime, showToast, defaultCard, onCardUse }) {
     const [amount, setAmount] = useState("");
     const [cat, setCat] = useState(null);
-    const [cardId, setCardId] = useState(cards[0].id);
+    const [cardId, setCardId] = useState(defaultCard && cards.some((c) => c.id === defaultCard) ? defaultCard : cards[0].id);
     const [merchant, setMerchant] = useState("");
     const [date, setDate] = useState(todayStr());
     const [showMore, setShowMore] = useState(false);
@@ -945,6 +1024,19 @@ function Record({ cards, cardById, tx, setTx, rules, learn, onManage, markActive
         return []; const cnt = {}; for (const t of tx)
         if (t.category === cat && t.sub)
             cnt[t.sub] = (cnt[t.sub] || 0) + 1; const ranked = Object.entries(cnt).sort((a, b) => b[1] - a[1]).map(([sn]) => sn); return (ranked.length ? ranked : TREE[cat]).slice(0, 3); }, [cat, tx]);
+    const recentMerchants = useMemo(() => { const seen = new Set(); const out = []; for (const t of tx) {
+        const m = (t.merchant || "").trim();
+        if (m && !seen.has(m)) {
+            seen.add(m);
+            out.push(m);
+        }
+        if (out.length >= 8)
+            break;
+    } return out; }, [tx]);
+    const pickMerchant = (m) => { setMerchant(m); const cl = classify(m, rules); if (cl.category && cl.category !== "未分類") {
+        setCat(cl.category);
+        setPendingSub(cl.sub || null);
+    } };
     const key = (d) => {
         if (d === "del")
             setAmount((a) => a.slice(0, -1));
@@ -965,6 +1057,10 @@ function Record({ cards, cardById, tx, setTx, rules, learn, onManage, markActive
         if (merchant && sub)
             learn(merchant, cat, sub);
         markActive();
+        if (onCardUse)
+            onCardUse(cardId);
+        if (showToast)
+            showToast(`已記錄 ${twd(amt)}${merchant.trim() ? " · " + merchant.trim() : ""}`, "撤銷", () => setTx((p) => p.filter((x) => x.id !== t.id)));
         setAmount("");
         setCat(null);
         setMerchant("");
@@ -990,6 +1086,9 @@ function Record({ cards, cardById, tx, setTx, rules, learn, onManage, markActive
             React.createElement("div", { className: "text-center mb-4" },
                 React.createElement("span", { style: { color: C.muted }, className: "text-xs" }, "\u91D1\u984D"),
                 React.createElement("div", { style: { fontVariantNumeric: "tabular-nums", color: amt ? C.ink : C.muted }, className: "text-4xl font-extrabold mt-1" }, twd(amt))),
+            recentMerchants.length > 0 && (React.createElement("div", { className: "flex gap-2 overflow-x-auto pb-1 mb-3" },
+                React.createElement("span", { style: { color: C.muted }, className: "text-xs self-center shrink-0" }, "\u5E38\u7528"),
+                recentMerchants.map((m) => (React.createElement("button", { key: m, onClick: () => pickMerchant(m), style: { background: merchant === m ? C.act : C.paper, color: merchant === m ? "#fff" : C.ink, border: `1px solid ${merchant === m ? C.act : C.border}` }, className: "px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap shrink-0" }, m))))),
             React.createElement("div", { className: "grid grid-cols-3 gap-2 mb-3" }, ["家用", "個人", "狗貓"].map((c) => (React.createElement("button", { key: c, onClick: () => { setCat(c); setPendingSub(null); }, style: { background: cat === c ? CAT_COLOR[c] : C.paper, color: cat === c ? "#fff" : C.ink, border: `1px solid ${cat === c ? CAT_COLOR[c] : C.border}` }, className: "py-3 rounded-xl text-sm font-bold transition-colors" }, c)))),
             cat && topSubs.length > 0 && (React.createElement("div", { className: "flex items-center gap-2 mb-3 flex-wrap" },
                 React.createElement("span", { style: { color: C.muted }, className: "text-xs" }, "\u5E38\u7528"),
@@ -1080,7 +1179,7 @@ function smartReconcile(rows, manual) {
     const manualOnly = manual.filter((m) => !uM.has(m.id));
     return { strong, fuzzy, groups, stmtOnly, manualOnly };
 }
-function Reconcile({ cards, cardById, tx, setTx, rules, onManage }) {
+function Reconcile({ cards, cardById, tx, setTx, rules, onManage, showToast, onGoCategorize }) {
     const reconCards = cards.filter((c) => isRecon(c.type));
     const [cardId, setCardId] = useState(reconCards[0]?.id);
     const [paste, setPaste] = useState("");
@@ -1111,9 +1210,16 @@ function Reconcile({ cards, cardById, tx, setTx, rules, onManage }) {
     const toggle = (id) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
     const reasons = (f) => [!f.exact ? `金額差 ${twd(f.ad)}` : null, f.dd >= 1 ? `日期差 ${Math.round(f.dd)} 天` : null, f.ms >= 0.3 ? "商家相似" : null].filter(Boolean).join(" · ");
     function runMatch() {
-        const manual = tx.filter((t) => t.cardId === cardId && t.source === "manual" && t.status !== "confirmed");
+        const dts = rows.map((r) => toDate(r.date)).filter((d) => !isNaN(d.getTime())).map((d) => d.getTime());
+        const hasD = dts.length > 0;
+        const minT = hasD ? Math.min(...dts) : 0, maxT = hasD ? Math.max(...dts) : 0;
+        const lo = minT - 4 * 86400000, hi = maxT + 4 * 86400000;
+        const inWin = (t) => { if (!hasD)
+            return true; const d = toDate(t.date); if (isNaN(d.getTime()))
+            return true; const x = d.getTime(); return x >= lo && x <= hi; };
+        const manual = tx.filter((t) => t.cardId === cardId && t.source === "manual" && t.status !== "confirmed" && inWin(t));
         const r = smartReconcile(rows, manual);
-        setResult({ ...r, rows: rows.length });
+        setResult({ ...r, rows: rows.length, period: hasD ? `${dstr(new Date(minT))} – ${dstr(new Date(maxT))}` : "" });
         setSel(new Set(r.fuzzy.filter((f) => f.ms >= 0.4).map((f) => f.s.id)));
         setRows(null);
     }
@@ -1145,9 +1251,13 @@ function Reconcile({ cards, cardById, tx, setTx, rules, onManage }) {
             const added = addRows.map((s) => { const cl = classify(s.merchant, rules); return { id: uid(), date: s.date, month: monthOf(s.date), merchant: s.merchant, amount: s.amount, category: cl.category, sub: cl.sub, cardId, source: "statement", status: "confirmed", installment: s.installment || undefined, biz: s.biz || undefined }; });
             return [...added, ...next].sort((a, b) => b.date.localeCompare(a.date));
         });
+        const addedCount = addRows.length;
+        const newUncat = addRows.filter((s) => classify(s.merchant, rules).category === "未分類").length;
         setResult(null);
         setPaste("");
         setSel(new Set());
+        if (showToast && addedCount > 0)
+            showToast(`已套用 · 新增 ${addedCount} 筆${newUncat ? `,其中 ${newUncat} 筆未分類` : ""}`, newUncat ? "去分類" : null, newUncat && onGoCategorize ? onGoCategorize : null);
     }
     return (React.createElement("div", { className: "space-y-4" },
         React.createElement(CardChips, { cards: reconCards, value: cardId, onChange: setCardId, onManage: onManage }),
@@ -1218,6 +1328,10 @@ function Reconcile({ cards, cardById, tx, setTx, rules, onManage }) {
                     rows.length,
                     " \u7B46"))),
             result && (React.createElement("div", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-5 space-y-4" },
+                result.period && React.createElement("div", { style: { color: C.muted }, className: "text-[11px] -mb-1" },
+                    "\u5DF2\u4F9D\u5E33\u55AE\u671F\u9593 ",
+                    React.createElement("b", { style: { color: C.ink } }, result.period),
+                    " \u6BD4\u5C0D(\u53EA\u6BD4\u9019\u6BB5\u4F60\u8A18\u7684\u4EA4\u6613,\u4E0D\u6703\u8AA4\u6293\u5176\u4ED6\u6708\u4EFD)"),
                 React.createElement("div", { className: "grid grid-cols-4 gap-2 text-center" },
                     React.createElement(Tally, { n: result.strong.length + (result.groups ? result.groups.length : 0), label: "\u5DF2\u5C0D\u4E0A", color: C.self }),
                     React.createElement(Tally, { n: result.fuzzy.length, label: "\u53EF\u80FD\u76F8\u7B26", color: C.home }),
@@ -1239,9 +1353,9 @@ function Reconcile({ cards, cardById, tx, setTx, rules, onManage }) {
                             m.merchant || "（未填商家）",
                             m.biz ? " · 可報帳" : ""),
                         React.createElement("span", { style: { fontVariantNumeric: "tabular-nums" }, className: "shrink-0" }, twd(m.amount))))))))),
-                result.fuzzy.length > 0 && (React.createElement(Bucket, { title: "\u53EF\u80FD\u76F8\u7B26 \u2192 \u52FE\u9078\u8981\u8996\u70BA\u540C\u4E00\u7B46", color: C.home }, result.fuzzy.map((f) => (React.createElement("label", { key: f.s.id, className: "flex items-start gap-2 py-1 cursor-pointer" },
-                    React.createElement("input", { type: "checkbox", checked: sel.has(f.s.id), onChange: () => toggle(f.s.id), className: "mt-1 shrink-0" }),
-                    React.createElement("div", { className: "flex-1 min-w-0" },
+                result.fuzzy.length > 0 && (React.createElement(Bucket, { title: "\u53EF\u80FD\u76F8\u7B26 \u2192 \u9078\u300C\u662F\u540C\u4E00\u7B46\u300D\u6216\u300C\u4E0D\u662F\u300D", color: C.home }, result.fuzzy.map((f) => {
+                    const yes = sel.has(f.s.id);
+                    return (React.createElement("div", { key: f.s.id, className: "py-1.5", style: { borderBottom: `1px solid ${C.border}` } },
                         React.createElement("div", { className: "flex justify-between text-sm" },
                             React.createElement("span", { className: "truncate pr-2" },
                                 "\u5E33\u55AE ",
@@ -1256,7 +1370,13 @@ function Reconcile({ cards, cardById, tx, setTx, rules, onManage }) {
                                 " ",
                                 f.m.merchant || "（未填商家）"),
                             React.createElement("span", { style: { fontVariantNumeric: "tabular-nums" }, className: "shrink-0" }, twd(f.m.amount))),
-                        React.createElement("div", { style: { color: C.muted }, className: "text-[11px]" }, reasons(f)))))))),
+                        React.createElement("div", { className: "flex items-center gap-2 mt-1" },
+                            React.createElement("span", { style: { color: C.muted }, className: "text-[11px] flex-1 truncate" }, reasons(f)),
+                            React.createElement("button", { onClick: () => { if (!yes)
+                                    toggle(f.s.id); }, style: { background: yes ? C.self : "transparent", color: yes ? "#fff" : C.muted, border: `1px solid ${yes ? C.self : C.border}` }, className: "text-[11px] rounded-full px-2.5 py-1 font-medium shrink-0" }, "\u662F\u540C\u4E00\u7B46"),
+                            React.createElement("button", { onClick: () => { if (yes)
+                                    toggle(f.s.id); }, style: { background: !yes ? C.loss : "transparent", color: !yes ? "#fff" : C.muted, border: `1px solid ${!yes ? C.loss : C.border}` }, className: "text-[11px] rounded-full px-2.5 py-1 font-medium shrink-0" }, "\u4E0D\u662F"))));
+                }))),
                 result.stmtOnly.length > 0 && (React.createElement(Bucket, { title: "\u5E33\u55AE\u6709\u3001\u4F60\u6C92\u8A18\u5230 \u2192 \u6703\u88DC\u9032\u4F86", color: C.home }, result.stmtOnly.map((s) => React.createElement(LineRow, { key: s.id, left: `${s.date.slice(5)} ${s.merchant}${s.installment ? " · 分期" : ""}`, right: twd(s.amount) })))),
                 result.manualOnly.length > 0 && (React.createElement(Bucket, { title: "\u4F60\u8A18\u4E86\u3001\u5E33\u55AE\u6C92\u6709 \u2192 \u6A19\u5F85\u78BA\u8A8D", color: C.loss }, result.manualOnly.map((m) => React.createElement(LineRow, { key: m.id, left: `${m.date.slice(5)} ${m.merchant || "（未填商家）"}`, right: twd(m.amount) })))),
                 result.strong.length > 0 && (React.createElement(Bucket, { title: "\u5DF2\u5C0D\u4E0A \u2192 \u6A19\u5DF2\u6838\u5C0D,\u4E26\u88DC\u5B50\u5206\u985E", color: C.self }, result.strong.map((x) => React.createElement(LineRow, { key: x.m.id, left: `${x.s.date.slice(5)} ${x.s.merchant}`, right: twd(x.s.amount) })))),
@@ -1349,21 +1469,46 @@ function ReimburseReport({ items, monthLabel, onClose }) {
                 React.createElement("button", { onClick: printReport, style: { background: C.card, color: C.ink, border: `1px solid ${C.border}` }, className: "rounded-lg py-2.5 text-sm font-semibold" }, "\u5217\u5370/PDF")),
             React.createElement("p", { style: { color: C.muted }, className: "text-[11px] mt-3" }, "\u7533\u8ACB\u5F8C\u6536\u5230\u6B3E\u9805,\u56DE\u4EA4\u6613\u660E\u7D30\u6216\u53EF\u5831\u5E33\u5361\u6309\u5404\u7B46\u300C\u6A19\u5DF2\u6536\u300D\u5373\u53EF\u5F9E\u5F85\u6536\u79FB\u9664\u3002"))));
 }
-function Analyze({ cards, cardById, tx, setTx, learn, budgets, setBudgets, fixedOverride, setFixedOverride }) {
+function Analyze({ cards, cardById, tx, setTx, learn, budgets, setBudgets, fixedOverride, setFixedOverride, showToast, focusUncat, onFocusUncatDone }) {
     const [month, setMonth] = useState("all");
     const [card, setCard] = useState("all");
     const [expandedCat, setExpandedCat] = useState(null);
     const [excludeBiz, setExcludeBiz] = useState(false);
     const [report, setReport] = useState(false);
     const [showBizList, setShowBizList] = useState(false);
+    const [editId, setEditId] = useState(null);
+    const [ef, setEf] = useState(null);
+    const [batch, setBatch] = useState(false);
+    const [sel, setSel] = useState(() => new Set());
+    const [batchSub, setBatchSub] = useState("");
     const [page, setPage] = useState(1);
     const PER_PAGE = 30;
-    useEffect(() => { setPage(1); }, [month, card, excludeBiz]);
+    const [q, setQ] = useState("");
+    const [onlyPending, setOnlyPending] = useState(false);
+    const [onlyUncat, setOnlyUncat] = useState(false);
+    useEffect(() => { setPage(1); }, [month, card, excludeBiz, q, onlyPending, onlyUncat]);
+    useEffect(() => { if (focusUncat) {
+        setOnlyUncat(true);
+        onFocusUncatDone && onFocusUncatDone();
+    } }, [focusUncat]);
     const months = useMemo(() => Array.from(new Set(tx.map((t) => t.month))).sort().reverse(), [tx]);
     const filtered = useMemo(() => tx.filter((t) => (month === "all" || t.month === month) && (card === "all" || t.cardId === card) && (!excludeBiz || !t.biz)), [tx, month, card, excludeBiz]);
-    const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+    const qn = q.trim().toLowerCase();
+    const pendingCount = useMemo(() => filtered.filter((t) => t.status === "logged").length, [filtered]);
+    const uncatCount = useMemo(() => filtered.filter((t) => (t.category || "未分類") === "未分類").length, [filtered]);
+    const listView = useMemo(() => {
+        let arr = filtered;
+        if (onlyPending)
+            arr = arr.filter((t) => t.status === "logged");
+        if (onlyUncat)
+            arr = arr.filter((t) => (t.category || "未分類") === "未分類");
+        if (qn)
+            arr = arr.filter((t) => (t.merchant || "").toLowerCase().includes(qn) || (t.sub || "").toLowerCase().includes(qn) || (t.category || "").toLowerCase().includes(qn) || String(t.amount).includes(qn) || (t.date || "").includes(qn));
+        return arr;
+    }, [filtered, qn, onlyPending, onlyUncat]);
+    const totalPages = Math.max(1, Math.ceil(listView.length / PER_PAGE));
     const curPage = Math.min(Math.max(1, page), totalPages);
-    const pageItems = filtered.slice((curPage - 1) * PER_PAGE, curPage * PER_PAGE);
+    const pageItems = listView.slice((curPage - 1) * PER_PAGE, curPage * PER_PAGE);
     const bizSum = useMemo(() => {
         let dueAmt = 0, dueCount = 0, doneAmt = 0;
         const dueList = [];
@@ -1425,6 +1570,33 @@ function Analyze({ cards, cardById, tx, setTx, learn, budgets, setBudgets, fixed
         if (sub)
             learn(merchant, cat, sub);
     }
+    const openEdit = (t) => { setEditId(t.id); setEf({ date: t.date, merchant: t.merchant || "", amount: String(t.amount), category: t.category || "未分類", sub: t.sub || "", biz: !!t.biz, bizAmt: t.bizAmt != null ? String(t.bizAmt) : "", cardId: t.cardId || "" }); };
+    const saveEdit = () => {
+        if (!ef)
+            return;
+        const amt = Math.round(numv(ef.amount));
+        const cat = ef.sub ? SUB_PARENT[ef.sub] : (ef.category || "未分類");
+        setTx((p) => p.map((t) => (t.id === editId ? { ...t, date: ef.date, month: monthOf(ef.date), merchant: ef.merchant.trim(), amount: amt, category: cat, sub: ef.sub || null, cardId: ef.cardId || t.cardId, biz: ef.biz, bizAmt: ef.biz && ef.bizAmt !== "" ? numv(ef.bizAmt) : undefined } : t)));
+        if (ef.sub && ef.merchant.trim())
+            learn(ef.merchant.trim(), cat, ef.sub);
+        setEditId(null);
+        setEf(null);
+    };
+    const toggleSel = (id) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    const selAllPage = () => setSel((s) => { const n = new Set(s); const allSel = pageItems.length > 0 && pageItems.every((t) => n.has(t.id)); pageItems.forEach((t) => (allSel ? n.delete(t.id) : n.add(t.id))); return n; });
+    const applyBatch = () => {
+        if (!batchSub || sel.size === 0)
+            return;
+        const cat = SUB_PARENT[batchSub] || "未分類";
+        setTx((p) => p.map((t) => (sel.has(t.id) ? { ...t, category: cat, sub: batchSub } : t)));
+        setSel(new Set());
+        setBatchSub("");
+    };
+    const exitBatch = () => { setBatch(false); setSel(new Set()); setBatchSub(""); };
+    const delTx = (t) => { const idx = tx.findIndex((x) => x.id === t.id); const removed = tx[idx]; if (!removed)
+        return; setTx((p) => p.filter((x) => x.id !== t.id)); if (showToast)
+        showToast(`已刪除「${removed.merchant || "未填商家"}」`, "復原", () => setTx((cur) => { if (cur.some((x) => x.id === removed.id))
+            return cur; const arr = [...cur]; arr.splice(Math.min(idx, arr.length), 0, removed); return arr; })); };
     return (React.createElement("div", { className: "space-y-4" },
         months.length > 0 && React.createElement("div", { className: "flex gap-2 overflow-x-auto pb-1" },
             React.createElement(Chip, { active: month === "all", onClick: () => setMonth("all") }, "\u5168\u90E8\u6708\u4EFD"),
@@ -1501,24 +1673,84 @@ function Analyze({ cards, cardById, tx, setTx, learn, budgets, setBudgets, fixed
                 " \u7B46)"))),
         report && React.createElement(ReimburseReport, { items: bizSum.dueList, monthLabel: month === "all" ? "全部待收" : month, onClose: () => setReport(false) }),
         filtered.length > 0 && (React.createElement("section", { style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-2xl p-5" },
-            React.createElement("h3", { className: "text-sm font-bold mb-3" },
-                "\u4EA4\u6613\u660E\u7D30 ",
-                React.createElement("span", { style: { color: C.muted }, className: "font-normal" },
-                    "(",
-                    filtered.length,
-                    totalPages > 1 ? ` · 第 ${curPage}/${totalPages} 頁` : "",
-                    ")")),
-            React.createElement("div", { className: "space-y-1" }, pageItems.map((t) => (React.createElement("div", { key: t.id, className: "flex items-center gap-2 py-1.5 text-sm", style: { borderBottom: `1px solid ${C.border}` } },
-                React.createElement("span", { className: "w-2 h-2 rounded-sm shrink-0", title: cardById[t.cardId]?.name, style: { background: cardById[t.cardId]?.color || C.none } }),
-                React.createElement("span", { style: { color: C.muted, fontVariantNumeric: "tabular-nums" }, className: "text-xs w-12 shrink-0" }, t.date.slice(5)),
-                React.createElement("span", { className: "flex-1 truncate" }, t.merchant || "（未填商家）"),
-                React.createElement("span", { style: { background: STATUS[t.status]?.c || C.none }, className: "text-[10px] text-white rounded px-1 py-0.5 shrink-0 hidden sm:inline" }, STATUS[t.status]?.t),
-                React.createElement("span", { style: { fontVariantNumeric: "tabular-nums" }, className: "font-medium shrink-0" }, twd(t.amount)),
-                React.createElement("select", { value: t.sub || "", onChange: (e) => setSub(t.id, e.target.value, t.merchant), style: { background: CAT_COLOR[t.category], color: "#fff", border: "none", maxWidth: "5rem" }, className: "text-[11px] rounded-md px-1 py-1 shrink-0 font-medium appearance-none cursor-pointer truncate" },
-                    React.createElement("option", { value: "", style: { background: "#fff", color: C.ink } }, "\u672A\u6307\u5B9A"),
-                    Object.entries(TREE).map(([p, subs]) => React.createElement("optgroup", { key: p, label: p }, subs.map((s) => React.createElement("option", { key: s, value: s, style: { background: "#fff", color: C.ink } }, s))))),
-                React.createElement("button", { onClick: () => toggleBiz(t.id), title: "\u516C\u53F8/\u53EF\u5831\u5E33", style: { background: t.biz ? C.act : "transparent", color: t.biz ? "#fff" : C.muted, border: `1px solid ${t.biz ? C.act : C.border}` }, className: "text-[10px] rounded px-1 py-0.5 shrink-0" }, "\u516C"),
-                React.createElement("button", { onClick: () => setTx((p) => p.filter((x) => x.id !== t.id)), style: { color: C.muted }, className: "text-xs shrink-0 px-1" }, "\u2715"))))),
+            React.createElement("div", { className: "flex items-center justify-between mb-3" },
+                React.createElement("h3", { className: "text-sm font-bold" },
+                    "\u4EA4\u6613\u660E\u7D30 ",
+                    React.createElement("span", { style: { color: C.muted }, className: "font-normal" },
+                        "(",
+                        qn ? `找到 ${listView.length} / 共 ${filtered.length}` : filtered.length,
+                        totalPages > 1 ? ` · 第 ${curPage}/${totalPages} 頁` : "",
+                        ")")),
+                React.createElement("button", { onClick: () => (batch ? exitBatch() : (setBatch(true), setEditId(null))), style: { color: batch ? C.muted : C.act, border: `1px solid ${batch ? C.border : C.act}` }, className: "text-xs px-2.5 py-1 rounded-full font-medium" }, batch ? "取消批次" : "批次改類別")),
+            React.createElement("div", { className: "relative mb-2" },
+                React.createElement("input", { value: q, onChange: (e) => setQ(e.target.value), placeholder: "\u641C\u5C0B\u5546\u5BB6 / \u91D1\u984D / \u5206\u985E / \u65E5\u671F\u2026", style: { background: C.paper, border: `1px solid ${C.border}`, color: C.ink }, className: "w-full rounded-lg pl-8 pr-8 py-2 text-sm" }),
+                React.createElement("svg", { width: "15", height: "15", viewBox: "0 0 24 24", fill: "none", stroke: C.muted, strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", style: { position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)" } },
+                    React.createElement("circle", { cx: "11", cy: "11", r: "8" }),
+                    React.createElement("path", { d: "M21 21l-4.3-4.3" })),
+                q && React.createElement("button", { onClick: () => setQ(""), style: { position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: C.muted }, className: "text-sm" }, "\u2715")),
+            pendingCount > 0 && (React.createElement("button", { onClick: () => setOnlyPending((v) => !v), style: { background: onlyPending ? C.none : "transparent", color: onlyPending ? "#fff" : C.muted, border: `1px solid ${onlyPending ? C.none : C.border}` }, className: "text-xs px-3 py-1 rounded-full font-medium mb-2 mr-2" },
+                onlyPending ? "✓ " : "",
+                "\u5F85\u6838\u5C0D ",
+                pendingCount,
+                " \u7B46")),
+            uncatCount > 0 && (React.createElement("button", { onClick: () => setOnlyUncat((v) => !v), style: { background: onlyUncat ? C.none : "transparent", color: onlyUncat ? "#fff" : C.muted, border: `1px solid ${onlyUncat ? C.none : C.border}` }, className: "text-xs px-3 py-1 rounded-full font-medium mb-2" },
+                onlyUncat ? "✓ " : "",
+                "\u672A\u5206\u985E ",
+                uncatCount,
+                " \u7B46")),
+            batch && (React.createElement("div", { style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-xl p-2 mb-2 flex items-center gap-2 flex-wrap text-xs" },
+                React.createElement("span", { style: { color: C.ink }, className: "font-medium" },
+                    "\u5DF2\u9078 ",
+                    sel.size),
+                React.createElement("button", { onClick: selAllPage, style: { color: C.self }, className: "underline" }, "\u672C\u9801\u5168\u9078"),
+                React.createElement("select", { value: batchSub, onChange: (e) => setBatchSub(e.target.value), style: { background: C.card, border: `1px solid ${C.border}`, color: C.ink }, className: "rounded-lg px-2 py-1.5 text-xs flex-1 min-w-[7rem]" },
+                    React.createElement("option", { value: "" }, "\u6539\u70BA\u5206\u985E\u2026"),
+                    Object.entries(TREE).map(([p, subs]) => React.createElement("optgroup", { key: p, label: p }, subs.map((s) => React.createElement("option", { key: s, value: s }, s))))),
+                React.createElement("button", { onClick: applyBatch, disabled: !batchSub || !sel.size, style: { background: C.act, color: "#fff", opacity: batchSub && sel.size ? 1 : 0.4 }, className: "rounded-lg px-3 py-1.5 font-semibold" }, "\u5957\u7528"))),
+            React.createElement("div", { className: "space-y-1" }, pageItems.map((t) => (React.createElement("div", { key: t.id },
+                batch ? (React.createElement("div", { onClick: () => toggleSel(t.id), className: "flex items-center gap-2 py-1.5 text-sm cursor-pointer", style: { borderBottom: `1px solid ${C.border}` } },
+                    React.createElement("span", { style: { width: 18, height: 18, borderRadius: 5, border: `2px solid ${sel.has(t.id) ? C.act : C.border}`, background: sel.has(t.id) ? C.act : "transparent", color: "#fff" }, className: "shrink-0 flex items-center justify-center text-[11px] font-bold" }, sel.has(t.id) ? "✓" : ""),
+                    React.createElement("span", { style: { color: C.muted, fontVariantNumeric: "tabular-nums" }, className: "text-xs w-12 shrink-0" }, t.date.slice(5)),
+                    React.createElement("span", { className: "flex-1 truncate" }, t.merchant || "（未填商家）"),
+                    React.createElement("span", { style: { background: CAT_COLOR[t.category], color: "#fff" }, className: "text-[10px] rounded px-1 py-0.5 shrink-0" }, t.sub || t.category),
+                    React.createElement("span", { style: { fontVariantNumeric: "tabular-nums" }, className: "font-medium shrink-0" }, twd(t.amount)))) : (React.createElement("div", { className: "flex items-center gap-2 py-1.5 text-sm", style: { borderBottom: `1px solid ${C.border}` } },
+                    React.createElement("span", { className: "w-2 h-2 rounded-sm shrink-0", title: cardById[t.cardId]?.name, style: { background: cardById[t.cardId]?.color || C.none } }),
+                    React.createElement("span", { style: { color: C.muted, fontVariantNumeric: "tabular-nums" }, className: "text-xs w-12 shrink-0" }, t.date.slice(5)),
+                    React.createElement("button", { onClick: () => openEdit(t), className: "flex-1 truncate text-left", style: { color: C.ink } },
+                        t.merchant || "（未填商家）",
+                        " ",
+                        React.createElement("span", { style: { color: C.act }, className: "text-[10px]" }, "\u270E")),
+                    React.createElement("span", { style: { fontVariantNumeric: "tabular-nums" }, className: "font-medium shrink-0" }, twd(t.amount)),
+                    React.createElement("select", { value: t.sub || "", onChange: (e) => setSub(t.id, e.target.value, t.merchant), style: { background: CAT_COLOR[t.category], color: "#fff", border: "none", maxWidth: "5rem" }, className: "text-[11px] rounded-md px-1 py-1 shrink-0 font-medium appearance-none cursor-pointer truncate" },
+                        React.createElement("option", { value: "", style: { background: "#fff", color: C.ink } }, "\u672A\u6307\u5B9A"),
+                        Object.entries(TREE).map(([p, subs]) => React.createElement("optgroup", { key: p, label: p }, subs.map((s) => React.createElement("option", { key: s, value: s, style: { background: "#fff", color: C.ink } }, s))))),
+                    React.createElement("button", { onClick: () => toggleBiz(t.id), title: "\u516C\u53F8/\u53EF\u5831\u5E33", style: { background: t.biz ? C.act : "transparent", color: t.biz ? "#fff" : C.muted, border: `1px solid ${t.biz ? C.act : C.border}` }, className: "text-[10px] rounded px-1 py-0.5 shrink-0" }, "\u516C"),
+                    React.createElement("button", { onClick: () => delTx(t), style: { color: C.muted }, className: "text-xs shrink-0 px-1" }, "\u2715"))),
+                !batch && editId === t.id && ef && (React.createElement("div", { style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-xl p-3 mt-1 mb-2 space-y-2" },
+                    React.createElement("div", { className: "grid grid-cols-2 gap-2" },
+                        React.createElement("input", { type: "date", value: (ef.date || "").replace(/\//g, "-"), onChange: (e) => setEf({ ...ef, date: e.target.value.replace(/-/g, "/") }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" }),
+                        React.createElement("input", { type: "number", placeholder: "\u91D1\u984D", value: ef.amount, onChange: (e) => setEf({ ...ef, amount: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" })),
+                    React.createElement("input", { placeholder: "\u5546\u5BB6", value: ef.merchant, onChange: (e) => setEf({ ...ef, merchant: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm" }),
+                    React.createElement("div", { className: "grid grid-cols-2 gap-2" },
+                        React.createElement("select", { value: ef.category, onChange: (e) => setEf({ ...ef, category: e.target.value, sub: "" }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-lg px-2 py-2 text-sm" }, CATS.map((c) => React.createElement("option", { key: c }, c))),
+                        React.createElement("select", { value: ef.sub, onChange: (e) => setEf({ ...ef, sub: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "rounded-lg px-2 py-2 text-sm" },
+                            React.createElement("option", { value: "" }, "\u672A\u6307\u5B9A"),
+                            (TREE[ef.category] || []).map((s) => React.createElement("option", { key: s, value: s }, s)))),
+                    React.createElement("select", { value: ef.cardId, onChange: (e) => setEf({ ...ef, cardId: e.target.value }), style: { background: C.card, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-2 py-2 text-sm" },
+                        React.createElement("option", { value: "" }, "\uFF08\u4E0D\u6307\u5B9A\u652F\u4ED8\u65B9\u5F0F\uFF09"),
+                        cards.map((c) => React.createElement("option", { key: c.id, value: c.id },
+                            c.name,
+                            c.last4 ? ` ··${c.last4}` : ""))),
+                    React.createElement("div", { className: "flex items-center gap-2 flex-wrap" },
+                        React.createElement("button", { onClick: () => setEf({ ...ef, biz: !ef.biz, bizAmt: ef.biz ? "" : ef.bizAmt }), style: { background: ef.biz ? C.act : "transparent", color: ef.biz ? "#fff" : C.muted, border: `1px solid ${ef.biz ? C.act : C.border}` }, className: "px-3 py-1.5 rounded-full text-xs font-medium" }, ef.biz ? "✓ 公司 / 可報帳" : "標記公司 / 可報帳"),
+                        ef.biz && React.createElement("input", { inputMode: "numeric", value: ef.bizAmt, onChange: (e) => setEf({ ...ef, bizAmt: e.target.value }), placeholder: `可報帳金額(預設全額${ef.amount ? " " + ef.amount : ""})`, style: { background: C.card, border: `1px solid ${C.border}` }, className: "px-3 py-1.5 rounded-full text-xs flex-1 min-w-[9rem]" })),
+                    React.createElement("div", { className: "flex gap-2" },
+                        React.createElement("button", { onClick: () => { setEditId(null); setEf(null); }, style: { color: C.muted, border: `1px solid ${C.border}` }, className: "flex-1 rounded-lg py-2 text-sm" }, "\u53D6\u6D88"),
+                        React.createElement("button", { onClick: saveEdit, style: { background: C.act, color: "#fff" }, className: "flex-1 rounded-lg py-2 text-sm font-semibold" }, "\u5132\u5B58")))))))),
+            qn && listView.length === 0 && React.createElement("p", { style: { color: C.muted }, className: "text-sm text-center py-4" },
+                "\u627E\u4E0D\u5230\u7B26\u5408\u300C",
+                q,
+                "\u300D\u7684\u4EA4\u6613"),
             totalPages > 1 && (React.createElement("div", { className: "flex items-center justify-center gap-3 mt-3 text-xs" },
                 React.createElement("button", { onClick: () => setPage(curPage - 1), disabled: curPage <= 1, style: { color: curPage <= 1 ? C.border : C.act, border: `1px solid ${curPage <= 1 ? C.border : C.act}` }, className: "px-3 py-1.5 rounded-full font-medium" }, "\u4E0A\u4E00\u9801"),
                 React.createElement("span", { style: { color: C.muted } },
@@ -1530,6 +1762,32 @@ function Analyze({ cards, cardById, tx, setTx, learn, budgets, setBudgets, fixed
                 React.createElement("button", { onClick: () => setPage(curPage + 1), disabled: curPage >= totalPages, style: { color: curPage >= totalPages ? C.border : C.act, border: `1px solid ${curPage >= totalPages ? C.border : C.act}` }, className: "px-3 py-1.5 rounded-full font-medium" }, "\u4E0B\u4E00\u9801")))))));
 }
 /* ================= 卡片管理 ================= */
+function RulesModal({ rules, setRules, onClose }) {
+    const [q, setQ] = useState("");
+    const [onlyPending, setOnlyPending] = useState(false);
+    const [onlyUncat, setOnlyUncat] = useState(false);
+    const qn = q.trim().toLowerCase();
+    const rows = (rules || []).map((r, i) => ({ r, i })).filter(({ r }) => !qn || (r.name || r.key || "").toLowerCase().includes(qn) || (r.sub || "").toLowerCase().includes(qn) || (r.category || "").toLowerCase().includes(qn));
+    const changeSub = (i, sub) => setRules((p) => p.map((r, k) => (k === i ? { ...r, category: sub ? SUB_PARENT[sub] : "未分類", sub: sub || null } : r)));
+    const del = (i) => setRules((p) => p.filter((_, k) => k !== i));
+    return (React.createElement("div", { className: "fixed inset-0 z-50 flex items-end md:items-center justify-center", style: { background: "rgba(38,52,45,0.42)" }, onClick: onClose },
+        React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-full md:max-w-lg max-h-[85vh] overflow-y-auto rounded-t-2xl md:rounded-2xl p-5" },
+            React.createElement("div", { className: "flex items-center justify-between mb-1" },
+                React.createElement("h2", { className: "text-lg font-bold" }, "\u5206\u985E\u8A18\u61B6"),
+                React.createElement("button", { onClick: onClose, style: { color: C.muted }, className: "text-sm" }, "\u5B8C\u6210")),
+            React.createElement("p", { style: { color: C.muted }, className: "text-[11px] mb-3" }, "\u8A18\u5E33\u6642\u8A2D\u5B9A\u300C\u5E97\u5BB6 + \u5C0F\u5206\u985E\u300D\u5C31\u6703\u81EA\u52D5\u8A18\u4F4F,\u4E0B\u6B21\u540C\u5E97\u5BB6\u81EA\u52D5\u5E36\u51FA\u3002\u5728\u9019\u88E1\u53EF\u4FEE\u6539\u6216\u522A\u9664\u3002"),
+            (rules || []).length > 8 && React.createElement("input", { value: q, onChange: (e) => setQ(e.target.value), placeholder: "\u641C\u5C0B\u5E97\u5BB6 / \u5206\u985E\u2026", style: { background: C.card, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm mb-3" }),
+            rows.length ? (React.createElement("div", { className: "space-y-1" }, rows.map(({ r, i }) => (React.createElement("div", { key: i, className: "flex items-center gap-2 py-1.5 text-sm", style: { borderBottom: `1px solid ${C.border}` } },
+                React.createElement("span", { className: "flex-1 truncate" }, r.name || r.key),
+                React.createElement("select", { value: r.sub || "", onChange: (e) => changeSub(i, e.target.value), style: { background: CAT_COLOR[r.category] || C.none, color: "#fff", border: "none", maxWidth: "6rem" }, className: "text-[11px] rounded-md px-1 py-1 shrink-0 font-medium appearance-none cursor-pointer truncate" },
+                    React.createElement("option", { value: "", style: { background: "#fff", color: C.ink } }, "\u672A\u6307\u5B9A"),
+                    Object.entries(TREE).map(([p, subs]) => React.createElement("optgroup", { key: p, label: p }, subs.map((s) => React.createElement("option", { key: s, value: s, style: { background: "#fff", color: C.ink } }, s))))),
+                React.createElement("button", { onClick: () => del(i), style: { color: C.muted }, className: "text-xs shrink-0 px-1" }, "\u2715")))))) : React.createElement("p", { style: { color: C.muted }, className: "text-sm py-6 text-center" }, qn ? "找不到符合的記憶" : "還沒有記住的店家分類。"),
+            (rules || []).length > 0 && React.createElement("div", { style: { color: C.muted }, className: "text-[11px] mt-3 text-center" },
+                "\u5171\u8A18\u4F4F ",
+                (rules || []).length,
+                " \u500B\u5E97\u5BB6"))));
+}
 function CardsModal({ cards, setCards, tx, assets = [], onClose }) {
     const upd = (id, k, v) => setCards((p) => p.map((c) => (c.id === id ? { ...c, [k]: v } : c)));
     const payAccts = (assets || []).filter((a) => ["銀行存款", "電子支付", "現金"].includes(a.type));
@@ -1589,22 +1847,24 @@ const VALUE_TYPES = ["儲蓄", "投資型", "年金"];
 const PTYPE_COLOR = { 壽險: "#7FA9CE", 醫療: "#4FA98F", 意外: "#DB9270", 重疾: "#DD89A4", 癌症: "#A99BCB", 儲蓄: "#DFC081", 投資型: "#6FB59E", 年金: "#C9A6CE" };
 const PFREQ = [["yearly", "年繳"], ["semi", "半年繳"], ["quarter", "季繳"], ["monthly", "月繳"]];
 const PFREQ_MULT = { yearly: 1, semi: 2, quarter: 4, monthly: 12 };
-function policyAnnual(p) { return (p && (p.paidUp || p.surrendered)) ? 0 : (+p.premium || 0) * (PFREQ_MULT[p.payFreq] || 1); }
+function polFx(p) { return (p && p.currency === "USD") ? (numv(p.fxRate) || 32) : 1; }
+function policyAnnual(p) { return (p && (p.paidUp || p.surrendered)) ? 0 : (+p.premium || 0) * (PFREQ_MULT[p.payFreq] || 1) * polFx(p); }
 function policyCurValue(p) {
     if (!p || !p.hasValue || p.surrendered)
         return 0;
     const base = numv(p.cashValue);
     const r = numv(p.growthRate) / 100;
+    const fx = polFx(p);
     if (r > 0 && p.valueDate) {
         const t = toDate(p.valueDate);
         if (!isNaN(t)) {
             const yrs = Math.max(0, (Date.now() - t) / (365.25 * 86400000));
-            return Math.round(base * Math.pow(1 + r, yrs));
+            return Math.round(base * Math.pow(1 + r, yrs) * fx);
         }
     }
-    return Math.round(base);
+    return Math.round(base * fx);
 }
-const BLANK_POL = { name: "", company: "", ptype: "壽險", policyNo: "", insured: "", coverage: "", premium: "", payFreq: "yearly", startDate: "", payYears: "", payDate: "", hasValue: false, cashValue: "", valueDate: "", growthRate: "", paidUp: false, beneficiary: "", note: "" };
+const BLANK_POL = { name: "", company: "", ptype: "壽險", currency: "TWD", fxRate: "", policyNo: "", insured: "", coverage: "", premium: "", payFreq: "yearly", startDate: "", payYears: "", payDate: "", hasValue: false, cashValue: "", valueDate: "", growthRate: "", paidUp: false, beneficiary: "", note: "" };
 const NW_TYPES = ["現金", "銀行存款", "電子支付", "不動產", "其他"];
 const NW_COLOR = { 現金: "#A3BD9C", 銀行存款: "#7FA9CE", 電子支付: "#7CC0D8", 投資: "#4FA98F", 交割現金: "#9CC6B4", 保單: "#C9A6CE", 退休金: "#6FAE9B", 不動產: "#DB9270", 應收報帳: "#DFC081", 應收分帳: "#A99BCB", 其他: "#BCB0C8" };
 function Ring({ rate }) {
@@ -1873,11 +2133,12 @@ function PolicyDetail({ policies, setPolicies, assets, updateBal, priv, onBack }
     const protectCov = {};
     for (const p of pols)
         if (!p.surrendered && PROTECT_TYPES.includes(p.ptype))
-            protectCov[p.ptype] = (protectCov[p.ptype] || 0) + (+p.coverage || 0);
+            protectCov[p.ptype] = (protectCov[p.ptype] || 0) + (+p.coverage || 0) * polFx(p);
     const annualPrem = pols.reduce((s, p) => s + policyAnnual(p), 0);
     const policyValue = pols.reduce((s, p) => s + policyCurValue(p), 0);
     const surrTotal = pols.filter((p) => p.surrendered).reduce((s, p) => s + (+p.surrenderAmount || 0), 0);
     const money = (v) => (priv ? "••••" : twd(v));
+    const natMoney = (p, v) => (priv ? "••••" : ((p && p.currency === "USD" ? "US$" : "$") + Math.round(+v || 0).toLocaleString()));
     const inSt = { background: C.card, border: `1px solid ${C.border}` };
     const openSurr = (p) => setSurr({ id: p.id, amount: String(policyCurValue(p) || ""), date: todayStr(), acctId: accts[0] ? accts[0].id : "" });
     const doSurrender = () => {
@@ -1903,7 +2164,7 @@ function PolicyDetail({ policies, setPolicies, assets, updateBal, priv, onBack }
     const savePolicy = () => {
         if (!polf.name.trim())
             return;
-        const rec = { name: polf.name.trim(), company: polf.company.trim(), ptype: polf.ptype, policyNo: (polf.policyNo || "").trim(), insured: (polf.insured || "").trim(), coverage: +polf.coverage || 0, premium: +polf.premium || 0, payFreq: polf.payFreq, startDate: polf.startDate || "", payYears: (polf.payYears || "").trim(), payDate: polf.payDate, hasValue: !!polf.hasValue, cashValue: +polf.cashValue || 0, valueDate: polf.valueDate || "", growthRate: polf.growthRate || "", paidUp: !!polf.paidUp, beneficiary: polf.beneficiary.trim(), note: polf.note || "" };
+        const rec = { name: polf.name.trim(), company: polf.company.trim(), ptype: polf.ptype, currency: polf.currency || "TWD", fxRate: polf.fxRate || "", policyNo: (polf.policyNo || "").trim(), insured: (polf.insured || "").trim(), coverage: +polf.coverage || 0, premium: +polf.premium || 0, payFreq: polf.payFreq, startDate: polf.startDate || "", payYears: (polf.payYears || "").trim(), payDate: polf.payDate, hasValue: !!polf.hasValue, cashValue: +polf.cashValue || 0, valueDate: polf.valueDate || "", growthRate: polf.growthRate || "", paidUp: !!polf.paidUp, beneficiary: polf.beneficiary.trim(), note: polf.note || "" };
         if (editP)
             setPolicies((arr) => arr.map((x) => (x.id === editP ? { ...x, ...rec } : x)));
         else
@@ -1912,7 +2173,7 @@ function PolicyDetail({ policies, setPolicies, assets, updateBal, priv, onBack }
         setShowPF(false);
         setEditP(null);
     };
-    const openEdit = (p) => { setEditP(p.id); setPolf({ name: p.name, company: p.company || "", ptype: p.ptype, policyNo: p.policyNo || "", insured: p.insured || "", coverage: String(p.coverage || ""), premium: String(p.premium || ""), payFreq: p.payFreq || "yearly", startDate: p.startDate || "", payYears: p.payYears || "", payDate: p.payDate || "", hasValue: !!p.hasValue, cashValue: String(p.cashValue || ""), valueDate: p.valueDate || "", growthRate: p.growthRate != null ? String(p.growthRate) : "", paidUp: !!p.paidUp, beneficiary: p.beneficiary || "", note: p.note || "" }); setShowPF(true); };
+    const openEdit = (p) => { setEditP(p.id); setPolf({ name: p.name, company: p.company || "", ptype: p.ptype, currency: p.currency || "TWD", fxRate: p.fxRate != null ? String(p.fxRate) : "", policyNo: p.policyNo || "", insured: p.insured || "", coverage: String(p.coverage || ""), premium: String(p.premium || ""), payFreq: p.payFreq || "yearly", startDate: p.startDate || "", payYears: p.payYears || "", payDate: p.payDate || "", hasValue: !!p.hasValue, cashValue: String(p.cashValue || ""), valueDate: p.valueDate || "", growthRate: p.growthRate != null ? String(p.growthRate) : "", paidUp: !!p.paidUp, beneficiary: p.beneficiary || "", note: p.note || "" }); setShowPF(true); };
     return (React.createElement("div", { className: "space-y-4" },
         React.createElement("div", { className: "flex items-center gap-2" },
             React.createElement("button", { onClick: onBack, style: { color: C.act }, className: "text-sm font-semibold flex items-center gap-1" },
@@ -1987,11 +2248,16 @@ function PolicyDetail({ policies, setPolicies, assets, updateBal, priv, onBack }
                 React.createElement("input", { placeholder: "\u4FDD\u96AA\u516C\u53F8", value: polf.company, onChange: (e) => setPolf({ ...polf, company: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" }),
                 React.createElement("select", { value: polf.ptype, onChange: (e) => { const v = e.target.value; setPolf({ ...polf, ptype: v, hasValue: VALUE_TYPES.includes(v) ? true : polf.hasValue }); }, style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-2 py-2 text-sm" }, PTYPES.map((t) => React.createElement("option", { key: t }, t)))),
             React.createElement("div", { className: "grid grid-cols-2 gap-2" },
+                React.createElement("select", { value: polf.currency || "TWD", onChange: (e) => setPolf({ ...polf, currency: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-2 py-2 text-sm" },
+                    React.createElement("option", { value: "TWD" }, "\u53F0\u5E63\u8A08\u50F9"),
+                    React.createElement("option", { value: "USD" }, "\u7F8E\u5143\u8A08\u50F9")),
+                polf.currency === "USD" && React.createElement("input", { placeholder: "\u7F8E\u5143\u532F\u7387\uFF08\u7D04 32\uFF09", type: "number", value: polf.fxRate, onChange: (e) => setPolf({ ...polf, fxRate: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" })),
+            React.createElement("div", { className: "grid grid-cols-2 gap-2" },
                 React.createElement("input", { placeholder: "\u4FDD\u55AE\u865F\u78BC\uFF08\u9078\u586B\uFF09", value: polf.policyNo, onChange: (e) => setPolf({ ...polf, policyNo: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" }),
                 React.createElement("input", { placeholder: "\u88AB\u4FDD\u4EBA\uFF08\u9078\u586B\uFF09", value: polf.insured, onChange: (e) => setPolf({ ...polf, insured: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" })),
             React.createElement("div", { className: "grid grid-cols-2 gap-2" },
-                React.createElement("input", { placeholder: "\u4FDD\u984D", type: "number", value: polf.coverage, onChange: (e) => setPolf({ ...polf, coverage: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" }),
-                React.createElement("input", { placeholder: "\u4FDD\u8CBB\uFF08\u6BCF\u671F\uFF09", type: "number", value: polf.premium, onChange: (e) => setPolf({ ...polf, premium: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" })),
+                React.createElement("input", { placeholder: `保額${polf.currency === "USD" ? "（美元）" : ""}`, type: "number", value: polf.coverage, onChange: (e) => setPolf({ ...polf, coverage: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" }),
+                React.createElement("input", { placeholder: `保費（每期${polf.currency === "USD" ? "・美元" : ""}）`, type: "number", value: polf.premium, onChange: (e) => setPolf({ ...polf, premium: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "rounded-lg px-3 py-2 text-sm" })),
             React.createElement("div", { className: "flex gap-2" }, PFREQ.map(([v, t]) => React.createElement("button", { key: v, onClick: () => setPolf({ ...polf, payFreq: v }), style: { background: polf.payFreq === v ? C.act : C.paper, color: polf.payFreq === v ? "#fff" : C.ink, border: `1px solid ${polf.payFreq === v ? C.act : C.border}` }, className: "flex-1 py-1.5 rounded-lg text-xs font-medium" }, t))),
             React.createElement("div", { className: "grid grid-cols-2 gap-2" },
                 React.createElement("div", null,
@@ -2006,7 +2272,7 @@ function PolicyDetail({ policies, setPolicies, assets, updateBal, priv, onBack }
             React.createElement("button", { onClick: () => setPolf({ ...polf, paidUp: !polf.paidUp }), style: { background: polf.paidUp ? C.self : C.paper, color: polf.paidUp ? "#fff" : C.ink, border: `1px solid ${polf.paidUp ? C.self : C.border}` }, className: "w-full py-1.5 rounded-lg text-xs font-medium" }, polf.paidUp ? "✓ 已繳費期滿（不再繳保費）" : "已繳費期滿（不再繳保費）"),
             React.createElement("button", { onClick: () => setPolf({ ...polf, hasValue: !polf.hasValue }), style: { background: polf.hasValue ? C.self : C.paper, color: polf.hasValue ? "#fff" : C.ink, border: `1px solid ${polf.hasValue ? C.self : C.border}` }, className: "w-full py-1.5 rounded-lg text-xs font-medium" }, polf.hasValue ? "✓ 有保單價值（儲蓄/投資型）" : "有保單價值（解約金）"),
             polf.hasValue && (React.createElement("div", { className: "space-y-2" },
-                React.createElement("input", { placeholder: "\u76EE\u524D\u4FDD\u55AE\u50F9\u503C / \u89E3\u7D04\u91D1", type: "number", value: polf.cashValue, onChange: (e) => setPolf({ ...polf, cashValue: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm" }),
+                React.createElement("input", { placeholder: `目前保單價值 / 解約金${polf.currency === "USD" ? "（美元）" : ""}`, type: "number", value: polf.cashValue, onChange: (e) => setPolf({ ...polf, cashValue: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm" }),
                 React.createElement("div", { className: "grid grid-cols-2 gap-2" },
                     React.createElement("div", null,
                         React.createElement("div", { style: { color: C.muted }, className: "text-[11px] mb-1 ml-1" }, "\u73FE\u503C\u57FA\u6E96\u65E5"),
@@ -2016,7 +2282,8 @@ function PolicyDetail({ policies, setPolicies, assets, updateBal, priv, onBack }
                         React.createElement("input", { inputMode: "decimal", placeholder: "\u5982 2.5", value: polf.growthRate, onChange: (e) => setPolf({ ...polf, growthRate: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm" }))),
                 numv(polf.cashValue) > 0 && numv(polf.growthRate) > 0 && polf.valueDate && (React.createElement("div", { style: { color: C.muted }, className: "text-[11px] ml-1" },
                     "\u4F9D\u57FA\u6E96\u65E5\u8907\u5229,\u4ECA\u65E5\u7D04 ",
-                    React.createElement("b", { style: { color: C.self } }, twd(policyCurValue({ hasValue: true, cashValue: polf.cashValue, growthRate: polf.growthRate, valueDate: polf.valueDate }))),
+                    React.createElement("b", { style: { color: C.self } }, twd(policyCurValue({ hasValue: true, cashValue: polf.cashValue, growthRate: polf.growthRate, valueDate: polf.valueDate, currency: polf.currency, fxRate: polf.fxRate }))),
+                    polf.currency === "USD" ? "（已換算台幣）" : "",
                     ",\u4E26\u81EA\u52D5\u9010\u5E74\u589E\u52A0")))),
             React.createElement("input", { placeholder: "\u53D7\u76CA\u4EBA\uFF08\u9078\u586B\uFF09", value: polf.beneficiary, onChange: (e) => setPolf({ ...polf, beneficiary: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm" }),
             React.createElement("input", { placeholder: "\u5099\u8A3B\uFF08\u9078\u586B\uFF09", value: polf.note, onChange: (e) => setPolf({ ...polf, note: e.target.value }), style: { background: C.paper, border: `1px solid ${C.border}` }, className: "w-full rounded-lg px-3 py-2 text-sm" }),
@@ -2049,13 +2316,16 @@ function PolicyDetail({ policies, setPolicies, assets, updateBal, priv, onBack }
                     p.surrenderAcct && accts.find((a) => a.id === p.surrenderAcct) && React.createElement("span", null,
                         "\u5165 ",
                         accts.find((a) => a.id === p.surrenderAcct).name))) : (React.createElement("div", { className: "flex flex-wrap gap-x-3 gap-y-0.5 pl-4 mt-0.5 text-[11px]", style: { color: C.muted } },
+                    p.currency === "USD" && React.createElement("span", { style: { color: C.self } },
+                        "\u7F8E\u5143\u8A08\u50F9",
+                        numv(p.fxRate) ? `（匯率 ${p.fxRate}）` : ""),
                     +p.coverage > 0 && React.createElement("span", null,
                         "\u4FDD\u984D ",
-                        money(p.coverage)),
+                        natMoney(p, p.coverage)),
                     !p.paidUp && +p.premium > 0 && React.createElement("span", null,
                         (PFREQ.find(([v]) => v === p.payFreq) || [])[1] || "年繳",
                         " ",
-                        money(p.premium)),
+                        natMoney(p, p.premium)),
                     p.paidUp && React.createElement("span", { style: { color: C.self } }, "\u671F\u6EFF\u00B7\u514D\u7E73"),
                     p.hasValue && policyCurValue(p) > 0 && React.createElement("span", null,
                         "\u73FE\u503C ",
